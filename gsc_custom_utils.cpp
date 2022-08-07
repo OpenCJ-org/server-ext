@@ -34,10 +34,14 @@ void Gsc_Utils_VectorScale()
 
 void Gsc_Utils_IsEntityThinking(int entnum)
 {
+#ifdef COD4
+    stackPushInt(1); // Not implemented
+#else
 	if(*(int*)0x864F984 == entnum)
 		stackPushInt(1);
 	else
 		stackPushInt(0);
+#endif // COD4
 }
 
 void Gsc_Utils_CreateRandomInt()

@@ -3,8 +3,16 @@
 
 #include "shared.hpp"
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 void Gsc_Player_JumpClearStateExtended(int id);
 void Gsc_Player_GetGroundEntity(int id);
 void Gsc_player_GetJumpSlowdownTimer(int id);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #endif

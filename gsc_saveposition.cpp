@@ -2,6 +2,10 @@
 
 #include "gsc_saveposition.hpp"
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 struct opencj_save {
 	opencj_save *prevsave;
 	gentity_t *groundentity;
@@ -153,3 +157,7 @@ void gsc_saveposition_getcheckpointid(int id)
         stackPushUndefined();
     }
 }
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus

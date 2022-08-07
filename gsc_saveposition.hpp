@@ -3,6 +3,10 @@
 
 #include "shared.hpp"
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 void gsc_saveposition_initclient(int id);
 void gsc_saveposition_save(int id);
 void gsc_saveposition_selectsave(int id);
@@ -14,5 +18,9 @@ void gsc_saveposition_getrpgjumps(int id);
 void gsc_saveposition_getdoublerpg(int id);
 void gsc_saveposition_getcheckpointid(int id);
 void gsc_saveposition_getflags(int id);
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
 
 #endif

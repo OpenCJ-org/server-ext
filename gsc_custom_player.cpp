@@ -1,5 +1,9 @@
 #include "gsc_custom_player.hpp"
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
+
 void Gsc_Player_GetGroundEntity(int id)
 {
     playerState_t *ps = SV_GameClientNum(id);
@@ -27,3 +31,7 @@ void Gsc_player_GetJumpSlowdownTimer(int id)
 	int value = ps->pm_time;
 	stackPushInt(value);
 }
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus
