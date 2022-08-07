@@ -3,6 +3,9 @@
 
 #include "gsc_custom_utils.hpp"
 
+#ifdef __cplusplus
+extern "C" {
+#endif // __cplusplus
 
 void Gsc_Utils_Void(int entnum)
 {
@@ -86,3 +89,7 @@ void Gsc_Utils_IntToHexString()
     
     stackPushString(buf);
 }
+
+#ifdef __cplusplus
+}
+#endif // __cplusplus

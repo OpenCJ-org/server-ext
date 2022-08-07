@@ -15,11 +15,11 @@
 #else
 #ifdef COD4 // ============================================================= COD4
 
-#include "scr_vm.h"
+#include "../cod4x-server/src/scr_vm.h"
 
 #define KEY_MASK_FIRE           1
 #define KEY_MASK_MELEE          4
-#define KEY_MASK_USE            0x28 /* Combination */
+//#define KEY_MASK_USE            0x28 /* Combination */
 
 #define SV_GameClientNum                SV_GameClientNum
 #define SHARED_CLEARJUMPSTATE_MASK      (~0x4000)
@@ -79,7 +79,7 @@
 
 #define COD2_MAX_STRINGLENGTH     1024
 
-#define Com_DPrintf Printf
+//#define Com_DPrintf Printf
 #define stackError Scr_Error
 
 #endif // #else ifdef COD4
