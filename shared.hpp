@@ -45,6 +45,7 @@
 #define stackPushEntity     Scr_AddEntity
 #define stackPushArray      Scr_MakeArray
 #define stackPushArrayLast  Scr_AddArray
+#define stackGetParams      Scr_GetMultipleValues
 
 #define stackGetParamType Scr_GetType
 

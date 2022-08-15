@@ -32,6 +32,25 @@ void Gsc_player_GetJumpSlowdownTimer(int id)
 	stackPushInt(value);
 }
 
+void Gsc_Player_setWeaponAmmoClip(int id) //pls comment out for cod4
+{
+}
+
+void Gsc_Player_SV_GameSendServerCommand(int id)
+{
+	int reliable;
+	char *message;
+
+	if ( ! stackGetParams("si", &message, &reliable))
+	{
+		stackError("Gsc_Player_SV_GameSendServerCommand() one or more arguments is undefined or has a wrong type");
+		stackPushUndefined();
+		return;
+	}
+
+	SV_GameSendServerCommand(id, reliable, message);
+	stackPushBool(qtrue);
+}
 #ifdef __cplusplus
 }
 #endif // __cplusplus
