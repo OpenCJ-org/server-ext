@@ -15,6 +15,7 @@
 {"getuserinfo", gsc_player_get_userinfo, 0},
 {"sprintButtonPressed", Gsc_Utils_Void, 0},
 {"player_ondisconnect", Gsc_Utils_Void, 0},
+{"issprinting", Gsc_Utils_Void, 0},
 #else
 #endif
 {"jumpclearstateextended", Gsc_Player_JumpClearStateExtended, 0},

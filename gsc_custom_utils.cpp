@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "gsc_custom_utils.hpp"
 
@@ -10,6 +11,100 @@ extern "C" {
 void Gsc_Utils_Void(int entnum)
 {
     (void)entnum; // Unused
+}
+
+void Gsc_Utils_IsValidInt()
+{
+    char *buf = NULL;
+    stackGetParamString(0, &buf);
+
+    if (!buf)
+    {
+        stackPushBool(false);
+        return;
+    }
+
+    // strtoX functions allow spaces so they can be called multiple times, but that's not safe for user input
+    if (strchr(buf, ' ') != NULL)
+    {
+        stackPushBool(false);
+        return;
+    }
+
+    char *ptr = NULL;
+    long number = strtol(buf, &ptr, 10);
+    (void)number;
+    if (buf == ptr)
+    {
+        stackPushBool(false);
+        return;
+    }
+
+    stackPushBool(true);
+}
+
+void Gsc_Utils_IsValidFloat()
+{
+    char *buf = NULL;
+    stackGetParamString(0, &buf);
+
+    if (!buf)
+    {
+        stackPushBool(false);
+        return;
+    }
+
+    // strtoX functions allow spaces so they can be called multiple times, but that's not safe for user input
+    if (strchr(buf, ' ') != NULL)
+    {
+        stackPushBool(false);
+        return;
+    }
+
+    char *ptr = NULL;
+    float number = strtof(buf, &ptr);
+    (void)number;
+    if (buf == ptr)
+    {
+        stackPushBool(false);
+        return;
+    }
+
+    stackPushBool(true);
+}
+
+void Gsc_Utils_ContainsIllegalChars()
+{
+    bool result = false;
+    char *buf = NULL;
+    stackGetParamString(0, &buf);
+    if (buf != NULL)
+    {
+        for (int i = 0; i < (int)strlen(buf); i++)
+        {
+            unsigned char uChar = (unsigned char)buf[i];
+            if (uChar < 0x20) /* space */
+            {
+                result = true;
+                break;
+            }
+
+            // Other things that CoD4 doesn't like as input:
+            if ((uChar == 0x25) || /* percent */
+                (uChar == 0x26) || /* ampersand */
+                (uChar == 0x22) || /* double quote */
+                (uChar == 0x5C) || /* backslash */
+                (uChar == 0x7E) || /* tilde -> weird client issues as it's persistently bound to console */
+                (uChar == 0x7F) || /* DEL */
+                (uChar == 0xFF))   /* NBSP */
+            {
+                result = true;
+                break;
+            }
+        }
+    }
+
+    stackPushBool(result);
 }
 
 void Gsc_Utils_Printf()
@@ -64,7 +159,6 @@ void Gsc_Utils_HexStringToInt()
     
     if(buf == NULL)
     {
-				printf("first fail\n");
         stackPushUndefined();
         return;
     }
@@ -74,7 +168,6 @@ void Gsc_Utils_HexStringToInt()
     // Input wasn't 0, but function returned 0 (error)
     if(result == 0 && buf[0] != 0)
     {
-				printf("second fail\n");
         stackPushUndefined();
     }
     else
