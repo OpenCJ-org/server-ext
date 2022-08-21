@@ -12,6 +12,13 @@
 
 #define Shared_GetPort()                Cvar_FindVar("net_port")->integer
 
+#define Shared_Printf  Com_DPrintf
+
+#define stackMakeArray      stackPushArray
+#define stackPushArrayNext  stackPushArrayLast
+
+#define COD_MAX_STRINGLENGTH    COD2_MAX_STRINGLENGTH
+
 #else
 #ifdef COD4 // ============================================================= COD4
 
@@ -43,8 +50,8 @@
 #define stackPushString     Scr_AddString
 #define stackPushVector     Scr_AddVector
 #define stackPushEntity     Scr_AddEntity
-#define stackPushArray      Scr_MakeArray
-#define stackPushArrayLast  Scr_AddArray
+#define stackMakeArray      Scr_MakeArray
+#define stackPushArrayNext  Scr_AddArray
 #define stackGetParams      Scr_GetMultipleValues
 
 #define stackGetParamType Scr_GetType
@@ -78,10 +85,12 @@
 #define STACK_THREAD_LIST         0x18
 #define STACK_ENDON_LIST          0x19
 
-#define COD2_MAX_STRINGLENGTH     1024
 
-//#define Com_DPrintf Printf
+#define COD_MAX_STRINGLENGTH      MAX_STRING_CHARS
+
 #define stackError Scr_Error
+
+#define Shared_Printf(fmt, ...)   Com_Printf(CON_CHANNEL_SERVER, fmt, ##__VA_ARGS__)
 
 #endif // #else ifdef COD4
 #endif // #ifdef COD2

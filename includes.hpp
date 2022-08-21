@@ -4,5 +4,6 @@
 #include "gsc_custom_player.hpp"
 #include "gsc_custom_utils.hpp"
 #include "gsc_saveposition.hpp"
+#include "gsc_custom_mysql.hpp"
 
 #endif // __INCLUDES_HPP_

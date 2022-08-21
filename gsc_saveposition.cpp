@@ -148,12 +148,10 @@ void gsc_saveposition_getcheckpointid(int id)
 {
     if(playersaves_selected[id]->checkPointId != -1)
     {
-			printf("pushing %d\n", playersaves_selected[id]->checkPointId);
         stackPushInt(playersaves_selected[id]->checkPointId);
     }
     else
     {
-			printf("pushing undef\n");
         stackPushUndefined();
     }
 }

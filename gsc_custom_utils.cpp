@@ -4,6 +4,8 @@
 
 #include "gsc_custom_utils.hpp"
 
+#define SQL_MAX_QUERY_SIZE  (10 * 1024)
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
