@@ -6,4 +6,6 @@
 #include "gsc_saveposition.hpp"
 #include "gsc_custom_mysql.hpp"
 
+#include "opencj_fps.hpp"
+
 #endif // __INCLUDES_HPP_

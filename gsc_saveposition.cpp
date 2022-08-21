@@ -15,6 +15,7 @@ struct opencj_save {
     int RPGJumps;
     int nadeJumps;
     int doubleRPGs;
+    int fps;
     int flags;
 };
 
@@ -66,7 +67,8 @@ void gsc_saveposition_save(int id) //player savePosition_save(origin, angles, en
     {
         newsave->checkPointId = -1;
     }
-    stackGetParamInt(7, &newsave->flags);
+    stackGetParamInt(7, &newsave->fps);
+    stackGetParamInt(8, &newsave->flags);
 	newsave->prevsave = playersaves[id];
 	playersaves[id] = newsave;
     
@@ -104,6 +106,11 @@ void gsc_saveposition_selectsave(int id) //player savePosition_selectSave(backwa
 void gsc_saveposition_getangles(int id)
 {
 	stackPushVector(playersaves_selected[id]->angles);
+}
+
+void gsc_saveposition_getfps(int id)
+{
+	stackPushInt(playersaves_selected[id]->fps);
 }
 
 void gsc_saveposition_getorigin(int id)

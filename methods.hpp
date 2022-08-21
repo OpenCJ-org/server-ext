@@ -7,6 +7,7 @@
 {"saveposition_getangles", gsc_saveposition_getangles, 0},
 {"saveposition_getorigin", gsc_saveposition_getorigin, 0},
 {"saveposition_getgroundentity", gsc_saveposition_getgroundentity, 0},
+{"saveposition_getfps", gsc_saveposition_getfps, 0},
 #ifndef COD4 // CoD4 actually has these functions
 {"setactionslot", Gsc_Utils_Void, 0},
 {"setperk", Gsc_Utils_Void, 0},
@@ -14,7 +15,7 @@
 {"setweaponammoclip", Gsc_Player_setWeaponAmmoClip, 0},
 {"getuserinfo", gsc_player_get_userinfo, 0},
 {"sprintButtonPressed", Gsc_Utils_Void, 0},
-{"player_ondisconnect", Gsc_Utils_Void, 0},
+{"player_onconnect", Gsc_Utils_Void, 0},
 {"issprinting", Gsc_Utils_Void, 0},
 #else
 #endif
@@ -28,6 +29,7 @@
 {"saveposition_getflags", gsc_saveposition_getflags, 0},
 {"isthinking", Gsc_Utils_IsEntityThinking, 0},
 {"SV_GameSendServerCommand", Gsc_Player_SV_GameSendServerCommand, 0},
+{"clearfpsfilter", Gsc_Player_ClearFPSFilter, 0},
 
 
 #endif // __METHODS_HPP_

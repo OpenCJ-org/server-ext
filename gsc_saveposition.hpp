@@ -18,6 +18,7 @@ void gsc_saveposition_getrpgjumps(int id);
 void gsc_saveposition_getdoublerpg(int id);
 void gsc_saveposition_getcheckpointid(int id);
 void gsc_saveposition_getflags(int id);
+void gsc_saveposition_getfps(int id);
 
 #ifdef __cplusplus
 }

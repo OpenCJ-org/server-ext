@@ -51,6 +51,13 @@ void Gsc_Player_SV_GameSendServerCommand(int id)
 	SV_GameSendServerCommand(id, reliable, message);
 	stackPushBool(qtrue);
 }
+
+void Gsc_Player_ClearFPSFilter(int id)
+{
+	playerState_t *ps = SV_GameClientNum(id);
+	opencj_clearPlayerFPS(ps->clientNum);
+}
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
