@@ -19,6 +19,8 @@
 
 #define COD_MAX_STRINGLENGTH    COD2_MAX_STRINGLENGTH
 
+#define ENTFLAG_INVISIBLE   0x800u
+
 #else
 #ifdef COD4 // ============================================================= COD4
 
@@ -90,6 +92,8 @@
 #define stackError Scr_Error
 
 #define Shared_Printf(fmt, ...)   Com_Printf(CON_CHANNEL_SERVER, fmt, ##__VA_ARGS__)
+
+#define ENTFLAG_INVISIBLE   0x20u
 
 #endif // #else ifdef COD4
 #endif // #ifdef COD2

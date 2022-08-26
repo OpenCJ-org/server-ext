@@ -16,7 +16,7 @@
 {"getuserinfo", gsc_player_get_userinfo, 0},
 {"sprintButtonPressed", Gsc_Utils_Void, 0},
 {"player_onconnect", Gsc_Utils_Void, 0},
-{"issprinting", Gsc_Utils_Void, 0},
+{"issprinting", Gsc_Utils_ZeroInt, 0},
 {"followplayer", Gsc_Utils_Void, 0},
 #else
 #endif
@@ -31,6 +31,15 @@
 {"isthinking", Gsc_Utils_IsEntityThinking, 0},
 {"SV_GameSendServerCommand", Gsc_Player_SV_GameSendServerCommand, 0},
 {"clearfpsfilter", Gsc_Player_ClearFPSFilter, 0},
-
+{"addplayertohidelist", Gsc_Vis_AddPlayerToHideList, 0},
+{"removeplayerfromhidelist", Gsc_Vis_RemovePlayerFromHideList, 0},
+{"hideforall", Gsc_Vis_HideForAll, 0},
+{"sethideradius", Gsc_Vis_SetHideRadius, 0},
+{"sethidemodenone", Gsc_Vis_SetHideModeNone, 0},
+{"sethidemodeall", Gsc_Vis_SetHideModeAll, 0},
+{"sethidemodenear", Gsc_Vis_SetHideModeNear, 0},
+{"initvisibility", Gsc_Vis_InitVisibility, 0},
+{"hidefromplayer", Gsc_Vis_HideFromPlayer, 0},
+{"showtoallplayers", Gsc_Vis_ShowToAllPlayers, 0},
 
 #endif // __METHODS_HPP_

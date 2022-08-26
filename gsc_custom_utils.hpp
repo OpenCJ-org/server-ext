@@ -8,6 +8,7 @@ extern "C" {
 #endif // __cplusplus
 
 void Gsc_Utils_Void(int);
+void Gsc_Utils_ZeroInt(int);
 void Gsc_Utils_VoidFunc();
 void Gsc_Utils_IsValidInt();
 void Gsc_Utils_IsValidFloat();

@@ -28,7 +28,7 @@ static int opencj_prevClientFrameTimes[MAX_CLIENTS] = {0};
 static int opencj_avgFrameTimeMs[MAX_CLIENTS] = {0};
 
 /**************************************************************************
- * API fucntions                                                          *
+ * API functions                                                          *
  **************************************************************************/
 
 bool opencj_updatePlayerFPS(int clientNum, int time, int *pAvgFrameTimeMs)

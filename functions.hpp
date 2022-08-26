@@ -31,6 +31,7 @@
 {"mysql_setup_longquery", gsc_mysql_setup_longquery},
 {"mysql_append_longquery", gsc_mysql_append_longquery},
 {"mysql_async_execute_longquery", gsc_mysql_async_execute_longquery},
+{"updateplayervisibility", Gsc_Vis_UpdatePlayerVisibility},
 #ifndef COD4
 {"setminimap", Gsc_Utils_VoidFunc},
 {"getConfigStringByIndex", Gsc_Utils_VoidFunc},

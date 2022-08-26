@@ -5,6 +5,7 @@
 #include "gsc_custom_utils.hpp"
 #include "gsc_saveposition.hpp"
 #include "gsc_custom_mysql.hpp"
+#include "opencj_visibility.hpp"
 
 #include "opencj_fps.hpp"
 

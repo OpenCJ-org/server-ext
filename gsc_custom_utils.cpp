@@ -15,6 +15,11 @@ void Gsc_Utils_Void(int entnum)
     (void)entnum; // Unused
 }
 
+void Gsc_Utils_ZeroInt(int entnum)
+{
+    stackPushInt(0);
+}
+
 void Gsc_Utils_VoidFunc()
 {
     stackPushUndefined();
