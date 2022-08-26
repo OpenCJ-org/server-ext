@@ -17,6 +17,7 @@
 {"sprintButtonPressed", Gsc_Utils_Void, 0},
 {"player_onconnect", Gsc_Utils_Void, 0},
 {"issprinting", Gsc_Utils_Void, 0},
+{"followplayer", Gsc_Utils_Void, 0},
 #else
 #endif
 {"jumpclearstateextended", Gsc_Player_JumpClearStateExtended, 0},

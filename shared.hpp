@@ -53,8 +53,7 @@
 #define stackMakeArray      Scr_MakeArray
 #define stackPushArrayNext  Scr_AddArray
 #define stackGetParams      Scr_GetMultipleValues
-
-#define stackGetParamType Scr_GetType
+#define stackGetParamType   Scr_GetType
 
 #define STACK_UNDEFINED           0x00
 #define STACK_BEGIN_REF           0x01

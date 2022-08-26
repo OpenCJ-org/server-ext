@@ -31,5 +31,9 @@
 {"mysql_setup_longquery", gsc_mysql_setup_longquery},
 {"mysql_append_longquery", gsc_mysql_append_longquery},
 {"mysql_async_execute_longquery", gsc_mysql_async_execute_longquery},
+#ifndef COD4
+{"setminimap", Gsc_Utils_VoidFunc},
+{"getConfigStringByIndex", Gsc_Utils_VoidFunc},
+#endif
 
 #endif // __FUNCTIONS_HPP_
