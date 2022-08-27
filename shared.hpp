@@ -89,7 +89,7 @@
 
 #define COD_MAX_STRINGLENGTH      MAX_STRING_CHARS
 
-#define stackError Scr_Error
+#define stackError(fmt, ...) Scr_Error(va(fmt, ##__VA_ARGS__))
 
 #define Shared_Printf(fmt, ...)   Com_Printf(CON_CHANNEL_SERVER, fmt, ##__VA_ARGS__)
 

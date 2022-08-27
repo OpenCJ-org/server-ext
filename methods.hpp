@@ -42,4 +42,20 @@
 {"hidefromplayer", Gsc_Vis_HideFromPlayer, 0},
 {"showtoallplayers", Gsc_Vis_ShowToAllPlayers, 0},
 
+{"createDemo", Gsc_Demo_CreateDemoForPlayer, 0},
+{"destroyDemo", Gsc_Demo_DestroyDemoForPlayer, 0},
+{"addFrameToDemo", Gsc_Demo_AddFrame, 0},
+{"completeDemo", Gsc_Demo_Completed, 0},
+
+{"selectPlaybackDemo", Gsc_Demo_SelectPlaybackDemo, 0},
+{"readPlaybackFrame_origin", Gsc_Demo_ReadFrame_Origin, 0},
+{"readPlaybackFrame_angles", Gsc_Demo_ReadFrame_Angles, 0},
+{"skipPlaybackFrames", Gsc_Demo_SkipFrame, 0},
+{"skipPlaybackKeyFrames", Gsc_Demo_SkipKeyFrame, 0},
+{"nextPlaybackFrame", Gsc_Demo_NextFrame, 0},
+{"prevPlaybackFrame", Gsc_Demo_PrevFrame, 0},
+{"nextPlaybackKeyFrame", Gsc_Demo_ReadFrame_NextKeyFrame, 0},
+{"prevPlaybackKeyFrame", Gsc_Demo_ReadFrame_PrevKeyFrame, 0},
+
+
 #endif // __METHODS_HPP_

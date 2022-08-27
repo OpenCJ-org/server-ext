@@ -36,5 +36,8 @@
 {"setminimap", Gsc_Utils_VoidFunc},
 {"getConfigStringByIndex", Gsc_Utils_VoidFunc},
 #endif
+{"clearAllDemos", Gsc_Demo_ClearAllDemos},
+{"numberOfDemoFrames", Gsc_Demo_NumberOfFrames},
+{"numberOfDemoKeyFrames", Gsc_Demo_NumberOfKeyFrames},
 
 #endif // __FUNCTIONS_HPP_

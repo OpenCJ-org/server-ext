@@ -23,7 +23,7 @@ struct mysql_async_task
     bool done;
     bool started;
     bool save;
-    char query[COD_MAX_STRINGLENGTH + 1];
+    char query[SQL_MAX_QUERY_SIZE + 1];
 };
 
 struct mysql_async_connection
@@ -127,7 +127,7 @@ int mysql_async_query_initializer(char *sql, bool save) //cannot be called from 
 
     mysql_async_task *newtask = new mysql_async_task;
     newtask->id = id;
-    strncpy(newtask->query, sql, COD_MAX_STRINGLENGTH);
+    strncpy(newtask->query, sql, SQL_MAX_QUERY_SIZE);
     newtask->prev = current;
     newtask->result = NULL;
     newtask->save = save;
@@ -680,6 +680,7 @@ void gsc_mysql_async_execute_longquery()
     }
 
     char *longQuery = (char *)ptr;
+    printf("Executing long query: %s\n", longQuery);
     int queryId = mysql_async_query_initializer(longQuery, (save > 0) ? true : false);
     free(longQuery);
 
