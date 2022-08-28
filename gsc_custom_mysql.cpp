@@ -680,7 +680,7 @@ void gsc_mysql_async_execute_longquery()
     }
 
     char *longQuery = (char *)ptr;
-    printf("Executing long query: %s\n", longQuery);
+    //printf("Executing long query: %s\n", longQuery);
     int queryId = mysql_async_query_initializer(longQuery, (save > 0) ? true : false);
     free(longQuery);
 

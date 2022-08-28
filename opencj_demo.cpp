@@ -160,12 +160,9 @@ static sDemo_t *createDemo(int demoId)
         printf("Checking for free slot at %d\n", i);
         if (opencj_demos[i].id <= 0)
         {
-            printf("found free slot...\n");
             // Free slot
             pDemo = &opencj_demos[i];
-            printf("inserting..\n");
             opencj_demoIdToIdx[demoId] = i;
-            printf("Found free demo slot for id %d at index %d\n", demoId, i);
             break;
         }
     }
