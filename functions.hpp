@@ -29,6 +29,7 @@
 {"mysql_async_getresult_and_free", gsc_mysql_async_getresult_and_free},
 {"mysql_reuse_connection", gsc_mysql_reuse_connection},
 {"mysql_setup_longquery", gsc_mysql_setup_longquery},
+{"mysql_free_longquery", gsc_mysql_free_longquery},
 {"mysql_append_longquery", gsc_mysql_append_longquery},
 {"mysql_async_execute_longquery", gsc_mysql_async_execute_longquery},
 {"updateplayervisibility", Gsc_Vis_UpdatePlayerVisibility},

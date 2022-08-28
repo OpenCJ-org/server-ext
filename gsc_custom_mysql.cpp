@@ -607,6 +607,29 @@ void gsc_mysql_setup_longquery()
     }
 }
 
+void gsc_mysql_free_longquery()
+{
+    if (Scr_GetNumParam() != 1)
+    {
+        stackError("FreeLongQuery expected 1 param: <HANDLE>");
+        stackPushBool(false);
+        return;
+    }
+
+    int ptr = -1;
+    stackGetParamInt(0, &ptr);
+    if (ptr <= 0)
+    {
+        stackError("FreeLongQuery called with invalid handle!");
+        stackPushBool(false);
+        return;
+    }
+    char *longQuery = (char *)ptr;
+
+    free(longQuery);
+    stackPushBool(true);
+}
+
 void gsc_mysql_append_longquery()
 {
     if (Scr_GetNumParam() != 2)

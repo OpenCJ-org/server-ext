@@ -65,7 +65,7 @@ typedef struct
     bool isComplete;            // Whether (or not) this demo has been completed and thus its size will not increase
     bool isFirstFrameFilled;    // Whether or not the first frame is already filled (at the start, currentFrame is 0 but it has not been filled yet)
     int size;                   // Size. This can change if the demo was not yet finished
-    sDemoFrame_t *pDemoFrames;  // Pointer to all demo frames (not used as handle because can be re-allocated)
+    sDemoFrame_t *pDemoFrames;  // Pointer to all frames of this demo (not used as handle because can be re-allocated)
     int nrAllocatedFrames;      // Number of currently allocated frames for this demo
     int currentFrame;           // Index of the last frame of this demo (actively updated)
     int lastKeyFrame;           // To remember which demo frame is the current last key frame
@@ -209,7 +209,15 @@ static bool Base_Gsc_GetValidDemoId(int *pDemoId, int nrArgsExpected)
     }
 
     int demoId = -1;
-    if (!stackGetParamInt(0, &demoId) || (demoId <= 0))
+    if (stackGetParamType(0) != STACK_INT)
+    {
+        stackError("Argument 1 (demoId) is not an int");
+        stackPushUndefined();
+        return false;
+    }
+    stackGetParamInt(0, &demoId);
+
+    if (demoId <= 0)
     {
         stackError("Argument 1 (demoId) is not > 0");
         stackPushUndefined();
@@ -278,12 +286,12 @@ static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrame
         int requestedFrame = pPlayback->selectedFrame + nrToSkip;
         if (requestedFrame >= (pDemo->size - 1)) // - 1 because we're comparing an index to a size
         {
-            printf("[%d] can't select next frame, demo is finished\n", playerId);
-            stackPushInt(pDemo->size - 1);
+            //printf("[%d] can't select next frame, demo is finished\n", playerId);
+            stackPushInt(pPlayback->selectedFrame);
         }
         else if (requestedFrame < 0) // TODO: start & end, 0 may not be begin
         {
-            printf("[%d] can't select previous frame, demo is at start\n", playerId);
+            //printf("[%d] can't select previous frame, demo is at start\n", playerId);
             stackPushInt(0);
         }
         else
@@ -406,6 +414,7 @@ void Gsc_Demo_AddFrame()
     const int nrExpectedArgs = 4;
     if (Scr_GetNumParam() != 4)
     {
+        stackPushUndefined();
         stackError("AddFrame expects 4 arguments: demoId, origin, angles, isKeyFrame");
         return;
     }
@@ -417,6 +426,7 @@ void Gsc_Demo_AddFrame()
     // Argument 2: origin
     if (stackGetParamType(1) != STACK_VECTOR)
     {
+        stackPushUndefined();
         stackError("Argument 2 (origin) is not a vector");
         return;
     }
@@ -426,6 +436,7 @@ void Gsc_Demo_AddFrame()
     // Argument 3: angles
     if (stackGetParamType(2) != STACK_VECTOR)
     {
+        stackPushUndefined();
         stackError("Argument 3 (angles) is not a vector");
         return;
     }
@@ -434,15 +445,24 @@ void Gsc_Demo_AddFrame()
 
     // Argument 4: isKeyFrame
     int keyFrame = -1;
-    if (!stackGetParamInt(3, &keyFrame) || (keyFrame < 0))
+    if (stackGetParamType(3) != STACK_INT)
     {
-        stackError("Argument 4 (isKeyFrame) is not a positive (or 0) int");
+        stackPushUndefined();
+        stackError("Argument 4 (keyFrame) is not an int");
         return;
+    }
+    stackGetParamInt(3, &keyFrame);
+
+    if (keyFrame < 0)
+    {
+        stackPushUndefined();
+        stackError("keyFrame < 0: %d", keyFrame);
     }
 
     sDemo_t *pDemo = findDemoById(demoId);
     if (!pDemo)
     {
+        stackPushUndefined();
         printf("Demo with id %d was not found.. stop adding frames please\n", demoId);
         return;
     }
@@ -505,6 +525,7 @@ void Gsc_Demo_AddFrame()
     // TODO: re-allocate pDemoFrames if we're over halfway
 
     //printf("Added frame %d to demo of player %d\n", idxNewFrame, playerId);
+    stackPushInt(demoId);
 }
 
 void Gsc_Demo_CompleteDemo()
@@ -593,11 +614,12 @@ void Gsc_Demo_SkipFrame(int playerId)
     }
 
     int nrFramesToSkip = 0;
-    if (!stackGetParamInt(0, &nrFramesToSkip))
+    if (stackGetParamType(0) != STACK_INT)
     {
         stackError("Argument 1 (nrFramesToSkip) is not an int");
         return;
     }
+    stackGetParamInt(0, &nrFramesToSkip);
 
     Base_Gsc_Demo_FrameSkip(playerId, nrFramesToSkip, false);
 }
@@ -609,14 +631,15 @@ void Gsc_Demo_SkipKeyFrame(int playerId)
         return;
     }
 
-    int nrKeyFramesToSkip = 0;
-    if (!stackGetParamInt(0, &nrKeyFramesToSkip))
+    int nrFramesToSkip = 0;
+    if (stackGetParamType(0) != STACK_INT)
     {
-        stackError("Argument 1 (nrKeyFramesToSkip) is not an int");
+        stackError("Argument 1 (nrFramesToSkip) is not an int");
         return;
     }
+    stackGetParamInt(0, &nrFramesToSkip);
 
-    Base_Gsc_Demo_FrameSkip(playerId, nrKeyFramesToSkip, true);
+    Base_Gsc_Demo_FrameSkip(playerId, nrFramesToSkip, true);
 }
 void Gsc_Demo_NextFrame(int playerId)
 {

@@ -33,6 +33,7 @@ void gsc_mysql_async_getresult_and_free();
 void gsc_mysql_async_initializer();
 void gsc_mysql_reuse_connection();
 void gsc_mysql_setup_longquery();
+void gsc_mysql_free_longquery();
 void gsc_mysql_append_longquery();
 void gsc_mysql_async_execute_longquery();
 
