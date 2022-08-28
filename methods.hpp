@@ -42,11 +42,6 @@
 {"hidefromplayer", Gsc_Vis_HideFromPlayer, 0},
 {"showtoallplayers", Gsc_Vis_ShowToAllPlayers, 0},
 
-{"createDemo", Gsc_Demo_CreateDemoForPlayer, 0},
-{"destroyDemo", Gsc_Demo_DestroyDemoForPlayer, 0},
-{"addFrameToDemo", Gsc_Demo_AddFrame, 0},
-{"completeDemo", Gsc_Demo_Completed, 0},
-
 {"selectPlaybackDemo", Gsc_Demo_SelectPlaybackDemo, 0},
 {"readPlaybackFrame_origin", Gsc_Demo_ReadFrame_Origin, 0},
 {"readPlaybackFrame_angles", Gsc_Demo_ReadFrame_Angles, 0},

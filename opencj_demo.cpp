@@ -8,7 +8,8 @@
 
 #include "shared.hpp"
 
-#include <string.h>
+#include <cstring>
+#include <map>
 
 /**************************************************************************
  * Defines                                                                *
@@ -24,7 +25,7 @@
 
 // In seconds. Initially, a player is allocated this amount of time worth of demo frames.
 // This is re-allocated upon more than half being used
-#define INITIAL_DEMO_TIME_ALLOCATION    (1 * HOUR) 
+#define INITIAL_DEMO_TIME_ALLOCATION    (1 * HOUR)
 // Calculate the number of initial demos frames to be allocated based on the above specified duration and server fps
 #define INITIAL_DEMO_FRAME_ALLOCATION   (INITIAL_DEMO_TIME_ALLOCATION * SERVER_FRAMES_PER_SECOND)
 // How many extra frames a demo should get on re-allocation
@@ -33,11 +34,12 @@
 
 // Max demos a player can record during a session. For example different runs in the same session.
 // Keep this semi-low, because each demo gets a decent chunk of allocated memory based on constants above
-//#define MAX_NR_DEMOS_PER_PLAYER         10 
+//#define MAX_NR_DEMOS_PER_PLAYER         10
 
-// Map-specific demos. We know the number of frames these demos have, so no excessive memory needed for these
-//#define MAX_NR_GLOBAL_DEMOS             512
+// Max number of demos per map that are available for playback
+#define MAX_NR_DEMOS_PER_MAP            128
 
+// Magic number to know if a demo is initialized / used for validity checking
 #define DEMO_MAGIC_NUMBER               (uint32_t)0x7fd126ea
 
 /**************************************************************************
@@ -52,22 +54,21 @@ typedef struct
                         // This may change during the demo, if the player loads back to before this frame
     int prevKeyFrame;   // When skipping backwards through demos
     int nextKeyFrame;   // When skipping forwards through demos
+
     // More fields after PoC
 } sDemoFrame_t;
 
 typedef struct
 {
     uint32_t magic;             // Magic number to hopefully provide clear errors when unexpected memory is accessed
-
+    int id;                     // Unique ID of the demo (== runID of player)
+    bool isComplete;            // Whether (or not) this demo has been completed and thus its size will not increase
     bool isFirstFrameFilled;    // Whether or not the first frame is already filled (at the start, currentFrame is 0 but it has not been filled yet)
     int size;                   // Size. This can change if the demo was not yet finished
-
-    char szName[64];            // Name of the demo
     sDemoFrame_t *pDemoFrames;  // Pointer to all demo frames (not used as handle because can be re-allocated)
     int nrAllocatedFrames;      // Number of currently allocated frames for this demo
     int currentFrame;           // Index of the last frame of this demo (actively updated)
     int lastKeyFrame;           // To remember which demo frame is the current last key frame
-    //uint32_t handle;          // Unique number for this demo
 } sDemo_t;
 
 typedef struct
@@ -80,416 +81,151 @@ typedef struct
  * Globals                                                                *
  **************************************************************************/
 
-// For now 1 demo per player
-static sDemo_t opencj_demos[MAX_CLIENTS];
+// For now max. number of demos per map
+static sDemo_t opencj_demos[MAX_NR_DEMOS_PER_MAP];
+// For faster access every time an id is provided, use a map
+static std::map<uint32_t, uint16_t> opencj_demoIdToIdx;
 
 // A player can only watch 1 demo at a time
 static sDemoPlayback_t opencj_playback[MAX_CLIENTS];
-
-//static sDemo_t opencj_globalDemos[MAX_NR_GLOBAL_DEMOS];
-
-// Incremented every time a new demo is created
-// No need to have complex logic for when a demo handle is no longer valid and a spot is freed up...
-// ..because uint32_t is gigantic
-//static uint32_t opencj_nextFreeUniqueId = 0;
 
 /**************************************************************************
  * Local functions                                                        *
  **************************************************************************/
 
-static void clearDemoByPointer(sDemo_t *pDemo)
+static sDemo_t *findDemoById(int demoId)
 {
-    printf("Clearing demo with pointer %p\n", pDemo);
-    if (pDemo->magic != DEMO_MAGIC_NUMBER)
+    sDemo_t *pDemo = NULL;
+    auto it = opencj_demoIdToIdx.find(demoId);
+    if (it == opencj_demoIdToIdx.end())
     {
-        printf("Attempted to clear (uninitialized?) demo %p\n", pDemo);
-        return;
+        printf("Demo with id %d was not found or is empty\n", demoId);
+    }
+    else
+    {
+        pDemo = &opencj_demos[it->second];
     }
 
-    delete[] pDemo->pDemoFrames;
-    pDemo->pDemoFrames = nullptr;
-
-    memset(pDemo, 0, sizeof(*pDemo));
+    return pDemo;
 }
 
-static void destroyDemoForPlayer(int clientNum)
+static void clearDemoById(int demoId)
 {
-    printf("Destroying demo for player with clientNum %d\n", clientNum);
-    sDemo_t *pDemo = &opencj_demos[clientNum];
-    if ((pDemo->magic == DEMO_MAGIC_NUMBER) && pDemo->pDemoFrames) // Check if this demo is in fact allocated
+    auto it = opencj_demoIdToIdx.find(demoId);
+    if (it != opencj_demoIdToIdx.end())
     {
-        clearDemoByPointer(pDemo);
+        sDemo_t *pDemo = &opencj_demos[it->second];
+        opencj_demoIdToIdx.erase(it);
+
+        // Clear demo data, free up this spot
+        if ((pDemo->magic != DEMO_MAGIC_NUMBER) || (pDemo->id <= 0))
+        {
+            printf("Demo is already clear (%p)\n", pDemo);
+            return;
+        }
+
+        printf("Clearing demo with pointer %p\n", pDemo);
+        if (pDemo->pDemoFrames)
+        {
+            delete[] pDemo->pDemoFrames;
+            pDemo->pDemoFrames = nullptr;
+        }
+
+        memset(pDemo, 0, sizeof(*pDemo));
     }
 }
 
 static void clearAllDemos()
 {
     printf("Clearing all demos\n");
-    for (int i = 0; i < MAX_CLIENTS; i++)
+    for (int i = 0; i < (int)(sizeof(opencj_demos) / sizeof(opencj_demos[0])); i++)
     {
-        destroyDemoForPlayer(i);
+        clearDemoById(opencj_demos[i].id);
     }
 }
 
-static bool isClientNumOutOfRange(int playerId)
+static sDemo_t *createDemo(int demoId)
 {
-    if ((playerId < 0) || (playerId >= MAX_CLIENTS))
+    if (findDemoById(demoId) != NULL)
     {
-        stackError("clientNum %d out of range", playerId);
+        printf("Demo with id %d already exists!\n", demoId);
+        return NULL;
+    }
+
+    printf("Creating demo with id %d\n", demoId);
+
+    sDemo_t *pDemo = NULL;
+    for (int i = 0; i < (int)(sizeof(opencj_demos) / sizeof(opencj_demos[0])); i++)
+    {
+        printf("Checking for free slot at %d\n", i);
+        if (opencj_demos[i].id <= 0)
+        {
+            printf("found free slot...\n");
+            // Free slot
+            pDemo = &opencj_demos[i];
+            printf("inserting..\n");
+            opencj_demoIdToIdx[demoId] = i;
+            printf("Found free demo slot for id %d at index %d\n", demoId, i);
+            break;
+        }
+    }
+
+    if (pDemo)
+    {
+        memset(pDemo, 0, sizeof(*pDemo));
+
+        pDemo->magic = DEMO_MAGIC_NUMBER;
+        pDemo->id = demoId;
+
+        pDemo->pDemoFrames = new sDemoFrame_t[INITIAL_DEMO_FRAME_ALLOCATION];
+        memset(pDemo->pDemoFrames, 0, INITIAL_DEMO_FRAME_ALLOCATION);
+    }
+
+    return pDemo;
+}
+
+/**************************************************************************
+ * Helper functions                                                       *
+ **************************************************************************/
+
+static bool Base_Gsc_IsValidClientNum(int clientNum)
+{
+    if ((clientNum < 0) || (clientNum >= MAX_CLIENTS))
+    {
+        stackError("clientNum %d out of range", clientNum);
         return true;
     }
 
     return false;
 }
 
-static void createDemo(sDemo_t *pDemo, const char *szName)
+static bool Base_Gsc_GetValidDemoId(int *pDemoId, int nrArgsExpected)
 {
-    pDemo->magic = DEMO_MAGIC_NUMBER;
+    if (!pDemoId) return false;
 
-    pDemo->pDemoFrames = new sDemoFrame_t[INITIAL_DEMO_FRAME_ALLOCATION];
-    memset(pDemo->pDemoFrames, 0, INITIAL_DEMO_FRAME_ALLOCATION);
-
-    strcpy(pDemo->szName, szName);
-}
-
-static const sDemo_t *findDemoByName(const char *szDemoName)
-{
-    const sDemo_t *pDemo = NULL;
-    for (int i = 0; i < (int)(sizeof(opencj_demos) / sizeof(opencj_demos[0])); i++)
+    int nrReceivedArgs = Scr_GetNumParam();
+    if (nrReceivedArgs != nrArgsExpected)
     {
-        if (opencj_demos[i].size == 0) continue;
-
-        if (strcmp(opencj_demos[i].szName, szDemoName) == 0)
-        {
-            pDemo = &opencj_demos[i];
-            break;
-        }
-    }
-
-    if (pDemo == NULL)
-    {
-        printf("demo with name %s was not found or is empty\n", szDemoName);
-    }
-    return pDemo;
-}
-
-/**************************************************************************
- * API functions                                                          *
- **************************************************************************/
-
-//==========================================================================
-// Functions that do work for any demo                                        
-//==========================================================================
-
-void Gsc_Demo_ClearAllDemos()
-{
-    clearAllDemos();
-}
-
-void Gsc_Demo_NumberOfFrames()
-{
-    if (Scr_GetNumParam() != 1)
-    {
-        stackError("Expected 1 param: demoName");
-        return;
-    }
-
-    const char *szDemoName = NULL;
-    stackGetParamString(0, &szDemoName);
-    if (!szDemoName)
-    {
-        stackError("Demo name is empty");
-        return;
-    }
-
-    const sDemo_t *pDemo = findDemoByName(szDemoName);
-    if (!pDemo)
-    {
+        stackError("Expected %d arguments, but got %d", nrArgsExpected, nrReceivedArgs);
         stackPushUndefined();
-    }
-    else
-    {
-        printf("Returning %d numberOfFrames for demo %s\n", pDemo->size, szDemoName);
-        stackPushInt(pDemo->size);
-    }
-}
-void Gsc_Demo_NumberOfKeyFrames()
-{
-    if (Scr_GetNumParam() != 1)
-    {
-        stackError("Expected 1 param: demoName");
-        return;
+        return false;
     }
 
-    const char *szDemoName = NULL;
-    stackGetParamString(0, &szDemoName);
-    if (!szDemoName)
+    int demoId = -1;
+    if (!stackGetParamInt(0, &demoId) || (demoId <= 0))
     {
-        stackError("Demo name is empty");
-        return;
-    }
-
-    const sDemo_t *pDemo = findDemoByName(szDemoName);
-    if (!pDemo)
-    {
+        stackError("Argument 1 (demoId) is not > 0");
         stackPushUndefined();
+        return false;
     }
-    else
-    {
-        int nrOfKeyFrames = 0;
-        int iter = 0;
-        while (iter < pDemo->size)
-        {
-            sDemoFrame_t *pFrame = &pDemo->pDemoFrames[iter];
-            if (pFrame->isKeyFrame)
-            {
-                nrOfKeyFrames++;
-            }
 
-            // Sanity check for development
-            int nextKeyFrame = pFrame->nextKeyFrame;
-            if (nextKeyFrame < iter)
-            {
-                printf("Key frame %d goes backwards to key frame %d??\n", iter, nextKeyFrame);
-                stackPushUndefined();
-                return;
-            }
-
-            // Check if we found the last key frame
-            if (nextKeyFrame == iter)
-            {
-                break;
-            }
-
-            // Skip to next key frame. TODO: how will this go with keyframe branching?
-            iter = nextKeyFrame;
-        }
-        printf("Returning %d numberOfKeyFrames for demo %s\n", nrOfKeyFrames, szDemoName);
-        stackPushInt(nrOfKeyFrames);
-    }
+    *pDemoId = demoId;
+    return true;
 }
 
-//==========================================================================
-// Functions related to recording for specific demos                                        
-//==========================================================================
-
-void Gsc_Demo_CreateDemoForPlayer(int playerId)
-{
-    if (Scr_GetNumParam() != 1)
-    {
-        stackError("Expected 1 param: demoName");
-        return;
-    }
-
-    const char *szDemoName = NULL;
-    stackGetParamString(0, &szDemoName);
-    if (!szDemoName)
-    {
-        stackError("Demo name is empty");
-        return;
-    }
-
-    printf("Creating demo for player %d\n", playerId);
-
-    sDemo_t *pDemo = &opencj_demos[playerId];
-    createDemo(pDemo, szDemoName);
-
-    printf("Demo created: %s\n", szDemoName);
-}
-
-void Gsc_Demo_DestroyDemoForPlayer(int playerId)
-{
-    /*
-    int demoPointer = 0;
-    stackGetParamInt(0, &demoPointer);
-    if (demoPointer == 0)
-    {
-        stackError("Missing demo pointer");
-        return;
-    }
-    */
-    if (isClientNumOutOfRange(playerId)) return;
-
-    printf("Destroying demo for player with clientNum %d\n", playerId);
-    destroyDemoForPlayer(playerId);
-}
-
-void Gsc_Demo_AddFrame(int playerId)
-{
-    if (isClientNumOutOfRange(playerId)) return;
-
-    if (Scr_GetNumParam() != 3)
-    {
-        stackError("AddFrame expects 3 arguments: origin, angles, isKeyFrame");
-        return;
-    }
-
-    if (stackGetParamType(0) != STACK_VECTOR)
-    {
-        stackError("Argument 1 (origin) is not a vector");
-        return;
-    }
-    vec3_t origin;
-    stackGetParamVector(0, origin);
-
-    if (stackGetParamType(1) != STACK_VECTOR)
-    {
-        stackError("Argument 2 (angles) is not a vector");
-        return;
-    }
-    vec3_t angles;
-    stackGetParamVector(1, angles);
-
-    int keyFrame = 0;
-    if (!stackGetParamInt(2, &keyFrame))
-    {
-        stackError("Argument 3 (isKeyFrame) is not an integer");
-        return;
-    }
-
-    printf("[%d] adding frame to demo\n", playerId);
-
-    sDemo_t *pDemo = &opencj_demos[playerId];
-
-    bool isFirstFrame = !pDemo->isFirstFrameFilled;
-    int idxCurrentFrame = pDemo->currentFrame;
-    int idxNewFrame = pDemo->currentFrame;
-    if (!isFirstFrame) // First frame might not be filled in yet
-    {
-        idxNewFrame++;
-    }
-
-    sDemoFrame_t *pCurrentFrame = &pDemo->pDemoFrames[idxCurrentFrame];
-    sDemoFrame_t *pNewFrame = &pDemo->pDemoFrames[idxNewFrame];
-
-    // Fill in new frame
-    memcpy(pNewFrame->origin, origin, sizeof(pNewFrame->origin));
-    memcpy(pNewFrame->angles, angles, sizeof(pNewFrame->angles));
-
-printf("[%d] frame %d has origin (%.1f, %.1f, %.1f)\n", playerId, idxCurrentFrame,
-                    origin[0], origin[1], origin[2]);
-
-    pNewFrame->isKeyFrame = (keyFrame > 0);
-    if (isFirstFrame)
-    {
-        pNewFrame->prevKeyFrame = idxCurrentFrame;
-    }
-    else
-    {
-        if (pCurrentFrame->isKeyFrame)
-        {
-            pNewFrame->prevKeyFrame = idxCurrentFrame;
-        }
-        else
-        {
-            pNewFrame->prevKeyFrame = pCurrentFrame->prevKeyFrame;
-        }
-    }
-
-    // If the new frame is a key frame, update all previous non-key frames to point to this frame
-    if (!isFirstFrame && pNewFrame->isKeyFrame)
-    {
-        for (int i = pDemo->lastKeyFrame; i < idxNewFrame; i++)
-        {
-            sDemoFrame_t *pTmpFrame = &pDemo->pDemoFrames[i];
-            pTmpFrame->nextKeyFrame = idxNewFrame;
-        }
-
-        // Update the last key frame of the demo
-        pDemo->lastKeyFrame = idxNewFrame;
-    }
-    else
-    {
-        pNewFrame->nextKeyFrame = idxNewFrame;
-    }
-
-    pDemo->size++;
-    pDemo->currentFrame++;
-
-    // TODO: key frame branching (player loads)
-    // TODO: re-allocate pDemoFrames if we're over halfway
-
-    printf("Added frame %d to demo of player %d\n", idxNewFrame, playerId);
-}
-
-void Gsc_Demo_Completed(int playerId)
-{
-    // TODO: keyframe branching?
-}
-
-//==========================================================================
-// Functions related to playback & control                                        
-//==========================================================================
-
-void Gsc_Demo_SelectPlaybackDemo(int playerId)
-{
-    if (isClientNumOutOfRange(playerId)) return;
-
-    if (Scr_GetNumParam() != 1)
-    {
-        stackError("Expected 1 argument: demoName");
-        return;
-    }
-
-    const char *szDemoName = NULL;
-    if (!stackGetParamString(0, &szDemoName) || (szDemoName == NULL))
-    {
-        stackError("Argument 1 (demoName) is not a string");
-        return;
-    }
-
-    printf("[%d] requesting playback demo %s\n", playerId, szDemoName);
-
-    // Clear the player's current playback state
-    sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
-    pPlayback->selectedFrame = 0;
-    pPlayback->pDemo = findDemoByName(szDemoName);
-    if (!pPlayback->pDemo)
-    {
-        stackPushUndefined();
-    }
-    else
-    {
-        printf("[%d] requested playback demo was found\n", playerId);
-        stackPushInt(1);
-    }
-}
-
-void Gsc_Demo_ReadFrame_Origin(int playerId)
-{
-    if (isClientNumOutOfRange(playerId)) return;
-
-    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
-    const sDemo_t *pDemo = pPlayback->pDemo;
-    if (!pDemo)
-    {
-        stackPushUndefined();
-    }
-    else
-    {
-        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
-        stackPushVector(pDemoFrame->origin);
-    }
-}
-void Gsc_Demo_ReadFrame_Angles(int playerId)
-{
-    if (isClientNumOutOfRange(playerId)) return;
-
-    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
-    const sDemo_t *pDemo = pPlayback->pDemo;
-    if (!pDemo)
-    {
-        stackPushUndefined();
-    }
-    else
-    {
-        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
-        stackPushVector(pDemoFrame->angles);
-    }
-}
 static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrames) // Helper function for skipping frames and keyframes
 {
-    if (isClientNumOutOfRange(playerId)) return;
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
 
     //printf("[%d] is skipping %d %sframes\n", playerId, nrToSkip, areKeyFrames ? "key" : "");
 
@@ -558,11 +294,297 @@ static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrame
             float origin[3];
             memcpy(origin, pPlayback->pDemo->pDemoFrames[requestedFrame].origin, sizeof(origin));
 
-            printf("[%d] selecting frame %d with origin (%.1f, %.1f, %.1f)\n", playerId, requestedFrame,
-                    origin[0], origin[1], origin[2]);
             pPlayback->selectedFrame = requestedFrame;
             stackPushInt(requestedFrame);
         }
+    }
+}
+
+//==========================================================================
+// Functions that do work for any demo                                        
+//==========================================================================
+
+void Gsc_Demo_ClearAllDemos()
+{
+    clearAllDemos();
+}
+
+void Gsc_Demo_NumberOfFrames()
+{
+    int demoId = -1;
+    if (!Base_Gsc_GetValidDemoId(&demoId, 1)) return;
+
+    const sDemo_t *pDemo = findDemoById(demoId);
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        printf("Returning %d numberOfFrames for demo %d\n", pDemo->size, demoId);
+        stackPushInt(pDemo->size);
+    }
+}
+void Gsc_Demo_NumberOfKeyFrames()
+{
+    int demoId = -1;
+    if (!Base_Gsc_GetValidDemoId(&demoId, 1)) return;
+
+    const sDemo_t *pDemo = findDemoById(demoId);
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        int nrOfKeyFrames = 0;
+        int iter = 0;
+        while (iter < pDemo->size)
+        {
+            sDemoFrame_t *pFrame = &pDemo->pDemoFrames[iter];
+            if (pFrame->isKeyFrame)
+            {
+                nrOfKeyFrames++;
+            }
+
+            // Sanity check for development
+            int nextKeyFrame = pFrame->nextKeyFrame;
+            if (nextKeyFrame < iter)
+            {
+                printf("Key frame %d goes backwards to key frame %d??\n", iter, nextKeyFrame);
+                stackPushUndefined();
+                return;
+            }
+
+            // Check if we found the last key frame
+            if (nextKeyFrame == iter)
+            {
+                break;
+            }
+
+            // Skip to next key frame. TODO: how will this go with keyframe branching?
+            iter = nextKeyFrame;
+        }
+        printf("Returning %d numberOfKeyFrames for demo %d\n", nrOfKeyFrames, demoId);
+        stackPushInt(nrOfKeyFrames);
+    }
+}
+
+void Gsc_Demo_CreateDemo()
+{
+    int demoId = -1;
+    if (!Base_Gsc_GetValidDemoId(&demoId, 1)) return;
+
+    sDemo_t *pDemo = findDemoById(demoId);
+    if (pDemo)
+    {
+        printf("Demo with id %d already loaded!\n", demoId);
+        stackPushInt(-1);
+        return;
+    }
+
+    pDemo = createDemo(demoId);
+    if (!pDemo)
+    {
+        printf("No free demo slots available (wow)!\n");
+        stackPushInt(-2);
+        return;
+    }
+
+    stackPushInt(demoId);
+    printf("Created demo with id %d\n", demoId);
+}
+
+void Gsc_Demo_DestroyDemo()
+{
+    int demoId = -1;
+    if (!Base_Gsc_GetValidDemoId(&demoId, 1)) return;
+
+    printf("Destroying demo with id %d\n", demoId);
+    clearDemoById(demoId);
+}
+
+void Gsc_Demo_AddFrame()
+{
+    const int nrExpectedArgs = 4;
+    if (Scr_GetNumParam() != 4)
+    {
+        stackError("AddFrame expects 4 arguments: demoId, origin, angles, isKeyFrame");
+        return;
+    }
+
+    // Argument 1: demoId
+    int demoId = -1;
+    if (!Base_Gsc_GetValidDemoId(&demoId, nrExpectedArgs)) return;
+
+    // Argument 2: origin
+    if (stackGetParamType(1) != STACK_VECTOR)
+    {
+        stackError("Argument 2 (origin) is not a vector");
+        return;
+    }
+    vec3_t origin;
+    stackGetParamVector(1, origin);
+
+    // Argument 3: angles
+    if (stackGetParamType(2) != STACK_VECTOR)
+    {
+        stackError("Argument 3 (angles) is not a vector");
+        return;
+    }
+    vec3_t angles;
+    stackGetParamVector(2, angles);
+
+    // Argument 4: isKeyFrame
+    int keyFrame = -1;
+    if (!stackGetParamInt(3, &keyFrame) || (keyFrame < 0))
+    {
+        stackError("Argument 4 (isKeyFrame) is not a positive (or 0) int");
+        return;
+    }
+
+    sDemo_t *pDemo = findDemoById(demoId);
+    if (!pDemo)
+    {
+        printf("Demo with id %d was not found.. stop adding frames please\n", demoId);
+        return;
+    }
+
+    bool isFirstFrame = !pDemo->isFirstFrameFilled;
+    int idxCurrentFrame = pDemo->currentFrame;
+    int idxNewFrame = pDemo->currentFrame;
+    if (!isFirstFrame) // First frame might not be filled in yet
+    {
+        idxNewFrame++;
+    }
+
+    sDemoFrame_t *pCurrentFrame = &pDemo->pDemoFrames[idxCurrentFrame];
+    sDemoFrame_t *pNewFrame = &pDemo->pDemoFrames[idxNewFrame];
+
+    // Fill in new frame
+    memcpy(pNewFrame->origin, origin, sizeof(pNewFrame->origin));
+    memcpy(pNewFrame->angles, angles, sizeof(pNewFrame->angles));
+
+    // Set key frame info for new frame
+    pNewFrame->isKeyFrame = (keyFrame > 0);
+    if (isFirstFrame)
+    {
+        pNewFrame->prevKeyFrame = idxCurrentFrame;
+    }
+    else
+    {
+        if (pCurrentFrame->isKeyFrame)
+        {
+            pNewFrame->prevKeyFrame = idxCurrentFrame;
+        }
+        else
+        {
+            pNewFrame->prevKeyFrame = pCurrentFrame->prevKeyFrame;
+        }
+    }
+
+    // If the new frame is a key frame, update all previous non-key frames to point to this frame
+    if (!isFirstFrame && pNewFrame->isKeyFrame)
+    {
+        for (int i = pDemo->lastKeyFrame; i < idxNewFrame; i++)
+        {
+            sDemoFrame_t *pTmpFrame = &pDemo->pDemoFrames[i];
+            pTmpFrame->nextKeyFrame = idxNewFrame;
+        }
+
+        // Update the last key frame of the demo
+        pDemo->lastKeyFrame = idxNewFrame;
+    }
+    else
+    {
+        pNewFrame->nextKeyFrame = idxNewFrame;
+    }
+
+    // We added 1 frame, so demo size increases by 1
+    pDemo->size++;
+    pDemo->currentFrame++;
+
+    // TODO: key frame branching (player loads)
+    // TODO: re-allocate pDemoFrames if we're over halfway
+
+    //printf("Added frame %d to demo of player %d\n", idxNewFrame, playerId);
+}
+
+void Gsc_Demo_CompleteDemo()
+{
+    int demoId = -1;
+    if (!Base_Gsc_GetValidDemoId(&demoId, 1)) return;
+
+    sDemo_t *pDemo = findDemoById(demoId);
+    if (!pDemo)
+    {
+        printf("Demo with id %d not found, can't complete..\n", demoId);
+        return;
+    }
+
+    pDemo->isComplete = true;
+
+    // TODO: keyframe branching?
+}
+
+//==========================================================================
+// Functions related to playback & control                                        
+//==========================================================================
+
+void Gsc_Demo_SelectPlaybackDemo(int playerId)
+{
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
+
+    int demoId = -1;
+    if (!Base_Gsc_GetValidDemoId(&demoId, 1)) return;
+
+    printf("[%d] requesting playback demoId %d\n", playerId, demoId);
+
+    // Clear the player's current playback state
+    sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
+    pPlayback->selectedFrame = 0;
+    pPlayback->pDemo = findDemoById(demoId);
+    if (!pPlayback->pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        printf("[%d] requested playback demoId %d was found\n", playerId, demoId);
+        stackPushInt(1);
+    }
+}
+
+void Gsc_Demo_ReadFrame_Origin(int playerId)
+{
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
+
+    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
+    const sDemo_t *pDemo = pPlayback->pDemo;
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        stackPushVector(pDemoFrame->origin);
+    }
+}
+void Gsc_Demo_ReadFrame_Angles(int playerId)
+{
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
+
+    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
+    const sDemo_t *pDemo = pPlayback->pDemo;
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        stackPushVector(pDemoFrame->angles);
     }
 }
 void Gsc_Demo_SkipFrame(int playerId)

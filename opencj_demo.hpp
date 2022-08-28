@@ -8,15 +8,10 @@
 void Gsc_Demo_ClearAllDemos();
 void Gsc_Demo_NumberOfFrames();
 void Gsc_Demo_NumberOfKeyFrames();
-
-//==========================================================================
-// Functions related to recording for specific demos                                        
-//==========================================================================
-
-void Gsc_Demo_CreateDemoForPlayer(int playerId);
-void Gsc_Demo_DestroyDemoForPlayer(int playerId);
-void Gsc_Demo_AddFrame(int playerId);
-void Gsc_Demo_Completed(int playerId);
+void Gsc_Demo_CreateDemo();
+void Gsc_Demo_DestroyDemo();
+void Gsc_Demo_AddFrame();
+void Gsc_Demo_CompleteDemo();
 
 //==========================================================================
 // Functions related to playback & control                                        

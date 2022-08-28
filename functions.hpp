@@ -39,5 +39,9 @@
 {"clearAllDemos", Gsc_Demo_ClearAllDemos},
 {"numberOfDemoFrames", Gsc_Demo_NumberOfFrames},
 {"numberOfDemoKeyFrames", Gsc_Demo_NumberOfKeyFrames},
+{"createDemo", Gsc_Demo_CreateDemo, 0},
+{"destroyDemo", Gsc_Demo_DestroyDemo, 0},
+{"completeDemo", Gsc_Demo_CompleteDemo, 0},
+{"addFrameToDemo", Gsc_Demo_AddFrame, 0},
 
 #endif // __FUNCTIONS_HPP_
