@@ -6,6 +6,7 @@
 //==========================================================================
 
 void Gsc_Demo_ClearAllDemos();
+void Gsc_Demo_HasKeyFrames();
 void Gsc_Demo_NumberOfFrames();
 void Gsc_Demo_NumberOfKeyFrames();
 void Gsc_Demo_CreateDemo();

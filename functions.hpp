@@ -38,6 +38,7 @@
 {"getConfigStringByIndex", Gsc_Utils_VoidFunc},
 #endif
 {"clearAllDemos", Gsc_Demo_ClearAllDemos},
+{"demoHasKeyFrames", Gsc_Demo_HasKeyFrames},
 {"numberOfDemoFrames", Gsc_Demo_NumberOfFrames},
 {"numberOfDemoKeyFrames", Gsc_Demo_NumberOfKeyFrames},
 {"createDemo", Gsc_Demo_CreateDemo, 0},

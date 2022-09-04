@@ -252,9 +252,9 @@ static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrame
         {
             if (nrToSkip != 0)
             {
+                //printf("Trying to skip %d keyFrames\n", nrToSkip);
                 int nrKeyFramesToSkip = abs(nrToSkip);      // The total number of key frames we need to skip
                 int nrKeyFramesSkipped = 0;                 // The number of key frames skipped so far
-                int prevFrame = pPlayback->selectedFrame;   // The previous frame that was processed, used to detect last frame
                 int currFrame = pPlayback->selectedFrame;   // The current frame being processed
                 bool isReverse = (nrToSkip < 0);            // Whether the skipping needs to be in reverse (true) or forward (false)
                 // OK, now for the actual key frame skipping
@@ -268,18 +268,17 @@ static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrame
                     if (nextKeyFrame == currFrame)
                     {
                         // We didn't get anywhere, so this must have been the last key frame
-                        printf("[%d] found last keyframe: %d\n", playerId, prevFrame);
-                        break;
-                    }
-
-                    // Check if we skipped enough key frames
-                    if (++nrKeyFramesSkipped >= nrKeyFramesToSkip)
-                    {
-                        printf("[%d] skipped enough keyframes (%d)\n", playerId, nrKeyFramesSkipped);
                         break;
                     }
 
                     currFrame = nextKeyFrame;
+
+                    // Check if we skipped enough key frames
+                    if (++nrKeyFramesSkipped >= nrKeyFramesToSkip)
+                    {
+                        //printf("[%d] skipped enough keyframes (%d)\n", playerId, nrKeyFramesSkipped);
+                        break;
+                    }
                 }
 
                 // We overwrite this with the number of frames to skip (rather than number of key frames), so we can re-use the code below
@@ -291,22 +290,23 @@ static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrame
         int requestedFrame = pPlayback->selectedFrame + nrToSkip;
         if (requestedFrame > (pDemo->size - 1)) // - 1 because we're comparing an index to a size
         {
-            //printf("[%d] can't select next frame, demo is finished\n", playerId);
-            stackPushInt(pPlayback->selectedFrame);
+            printf("[%d] can't select next frame, demo is finished\n", playerId);
+            requestedFrame = pDemo->size - 1;
         }
         else if (requestedFrame < 0) // TODO: start & end, 0 may not be begin
         {
-            //printf("[%d] can't select previous frame, demo is at start\n", playerId);
-            stackPushInt(0);
+            printf("[%d] can't select previous frame, demo is at start\n", playerId);
+            requestedFrame = 0;
         }
         else
         {
-            float origin[3];
-            memcpy(origin, pPlayback->pDemo->pDemoFrames[requestedFrame].origin, sizeof(origin));
-
-            pPlayback->selectedFrame = requestedFrame;
-            stackPushInt(requestedFrame);
+            // This is fine, not out of bounds
         }
+
+        pPlayback->selectedFrame = requestedFrame;
+        stackPushInt(requestedFrame);
+
+        //printf("Requested frame skip %d -> %d, returned %d\n", pPlayback->selectedFrame, pPlayback->selectedFrame + nrToSkip, requestedFrame);
     }
 }
 
@@ -317,6 +317,23 @@ static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrame
 void Gsc_Demo_ClearAllDemos()
 {
     clearAllDemos();
+}
+
+void Gsc_Demo_HasKeyFrames()
+{
+    int demoId = -1;
+    if (!Base_Gsc_GetValidDemoId(&demoId, 1)) return;
+
+    const sDemo_t *pDemo = findDemoById(demoId);
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        //printf("Returning %d numberOfFrames for demo %d\n", pDemo->size, demoId);
+        stackPushInt((pDemo->lastKeyFrame == 0) ? 0 : 1);
+    }
 }
 
 void Gsc_Demo_NumberOfFrames()
@@ -417,10 +434,10 @@ void Gsc_Demo_DestroyDemo()
 void Gsc_Demo_AddFrame()
 {
     const int nrExpectedArgs = 9;
-    if (Scr_GetNumParam() != 9)
+    if (Scr_GetNumParam() != nrExpectedArgs)
     {
         stackPushUndefined();
-        stackError("AddFrame expects 7 arguments: demoId, origin, angles, isKeyFrame, flags, saveNow, loadNow, rpgNow, fps");
+        stackError("AddFrame expects 9 arguments: demoId, origin, angles, isKeyFrame, flags, saveNow, loadNow, rpgNow, fps");
         return;
     }
 
@@ -516,14 +533,14 @@ void Gsc_Demo_AddFrame()
     }
 
     bool isFirstFrame = !pDemo->isFirstFrameFilled;
-    int idxCurrentFrame = pDemo->currentFrame;
+    int idxLastExistingFrame = pDemo->currentFrame;
     int idxNewFrame = pDemo->currentFrame;
     if (!isFirstFrame) // First frame might not be filled in yet
     {
         idxNewFrame++;
     }
 
-    sDemoFrame_t *pCurrentFrame = &pDemo->pDemoFrames[idxCurrentFrame];
+    sDemoFrame_t *pLastExistingFrame = &pDemo->pDemoFrames[idxLastExistingFrame];
     sDemoFrame_t *pNewFrame = &pDemo->pDemoFrames[idxNewFrame];
 
     // Fill in new frame
@@ -539,17 +556,17 @@ void Gsc_Demo_AddFrame()
     pNewFrame->fps = fps & 0xFFFF;
     if (isFirstFrame)
     {
-        pNewFrame->prevKeyFrame = idxCurrentFrame;
+        pNewFrame->prevKeyFrame = idxLastExistingFrame;
     }
     else
     {
-        if (pCurrentFrame->isKeyFrame)
+        if (pLastExistingFrame->isKeyFrame)
         {
-            pNewFrame->prevKeyFrame = idxCurrentFrame;
+            pNewFrame->prevKeyFrame = idxLastExistingFrame;
         }
         else
         {
-            pNewFrame->prevKeyFrame = pCurrentFrame->prevKeyFrame;
+            pNewFrame->prevKeyFrame = pLastExistingFrame->prevKeyFrame;
         }
     }
 
@@ -573,6 +590,7 @@ void Gsc_Demo_AddFrame()
     // We added 1 frame, so demo size increases by 1
     pDemo->size++;
     pDemo->currentFrame++;
+    pDemo->isFirstFrameFilled = true;
 
     // TODO: key frame branching (player loads)
     // TODO: re-allocate pDemoFrames if we're over halfway
