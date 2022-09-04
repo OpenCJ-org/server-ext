@@ -50,6 +50,11 @@ typedef struct
 {
     float origin[3];    // Origin of the player at this frame
     float angles[3];    // Angles of the player at this frame
+    short flags;		// flags that store button/stance/weapon stuff
+    short fps; 			// fps
+    bool saveNow;		// if this was a frame on which the player saved
+    bool loadNow;		// if this was a frame on which the player loaded
+    bool rpgNow;		// if this was a frame on which the player rpg'd
     bool isKeyFrame;    // Is this frame a 'key' frame, i.e. did the player's complete run contain this frame?
                         // This may change during the demo, if the player loads back to before this frame
     int prevKeyFrame;   // When skipping backwards through demos
@@ -284,7 +289,7 @@ static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrame
         }
 
         int requestedFrame = pPlayback->selectedFrame + nrToSkip;
-        if (requestedFrame >= (pDemo->size - 1)) // - 1 because we're comparing an index to a size
+        if (requestedFrame > (pDemo->size - 1)) // - 1 because we're comparing an index to a size
         {
             //printf("[%d] can't select next frame, demo is finished\n", playerId);
             stackPushInt(pPlayback->selectedFrame);
@@ -326,7 +331,7 @@ void Gsc_Demo_NumberOfFrames()
     }
     else
     {
-        printf("Returning %d numberOfFrames for demo %d\n", pDemo->size, demoId);
+        //printf("Returning %d numberOfFrames for demo %d\n", pDemo->size, demoId);
         stackPushInt(pDemo->size);
     }
 }
@@ -411,11 +416,11 @@ void Gsc_Demo_DestroyDemo()
 
 void Gsc_Demo_AddFrame()
 {
-    const int nrExpectedArgs = 4;
-    if (Scr_GetNumParam() != 4)
+    const int nrExpectedArgs = 9;
+    if (Scr_GetNumParam() != 9)
     {
         stackPushUndefined();
-        stackError("AddFrame expects 4 arguments: demoId, origin, angles, isKeyFrame");
+        stackError("AddFrame expects 7 arguments: demoId, origin, angles, isKeyFrame, flags, saveNow, loadNow, rpgNow, fps");
         return;
     }
 
@@ -458,6 +463,49 @@ void Gsc_Demo_AddFrame()
         stackPushUndefined();
         stackError("keyFrame < 0: %d", keyFrame);
     }
+   
+    int flags;
+    if (stackGetParamType(4) != STACK_INT)
+    {
+        stackPushUndefined();
+        stackError("Argument 5 (flags) is not an int");
+        return;
+    }
+    stackGetParamInt(4, &flags);
+   
+    int saveNow;
+    if (stackGetParamType(5) != STACK_INT)
+    {
+        stackPushUndefined();
+        stackError("Argument 6 (saveNow) is not an int");
+        return;
+    }
+    stackGetParamInt(5, &saveNow);
+	int loadNow;
+    if (stackGetParamType(6) != STACK_INT)
+    {
+        stackPushUndefined();
+        stackError("Argument 7 (loadNow) is not an int");
+        return;
+    }
+    stackGetParamInt(6, &loadNow);
+    int rpgNow;
+    if (stackGetParamType(7) != STACK_INT)
+    {
+        stackPushUndefined();
+        stackError("Argument 8 (rpgNow) is not an int");
+        return;
+    }
+    stackGetParamInt(7, &rpgNow);
+
+     int fps;
+    if (stackGetParamType(8) != STACK_INT)
+    {
+        stackPushUndefined();
+        stackError("Argument 9 (fps) is not an int");
+        return;
+    }
+    stackGetParamInt(8, &fps);
 
     sDemo_t *pDemo = findDemoById(demoId);
     if (!pDemo)
@@ -484,6 +532,11 @@ void Gsc_Demo_AddFrame()
 
     // Set key frame info for new frame
     pNewFrame->isKeyFrame = (keyFrame > 0);
+    pNewFrame->saveNow = (saveNow != 0);
+    pNewFrame->loadNow = (loadNow != 0);
+    pNewFrame->rpgNow = (rpgNow != 0);
+    pNewFrame->flags = flags & 0xFFFF;
+    pNewFrame->fps = fps & 0xFFFF;
     if (isFirstFrame)
     {
         pNewFrame->prevKeyFrame = idxCurrentFrame;
@@ -589,6 +642,92 @@ void Gsc_Demo_ReadFrame_Origin(int playerId)
         stackPushVector(pDemoFrame->origin);
     }
 }
+
+void Gsc_Demo_ReadFrame_SaveNow(int playerId)
+{
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
+
+    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
+    const sDemo_t *pDemo = pPlayback->pDemo;
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        stackPushInt(pDemoFrame->saveNow);
+    }
+}
+
+void Gsc_Demo_ReadFrame_LoadNow(int playerId)
+{
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
+
+    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
+    const sDemo_t *pDemo = pPlayback->pDemo;
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        stackPushInt(pDemoFrame->loadNow);
+    }
+}
+
+void Gsc_Demo_ReadFrame_FPS(int playerId)
+{
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
+
+    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
+    const sDemo_t *pDemo = pPlayback->pDemo;
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        stackPushInt(pDemoFrame->fps);
+    }
+}
+
+void Gsc_Demo_ReadFrame_Flags(int playerId)
+{
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
+
+    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
+    const sDemo_t *pDemo = pPlayback->pDemo;
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        stackPushInt(pDemoFrame->flags);
+    }
+}
+
+void Gsc_Demo_ReadFrame_RPGNow(int playerId)
+{
+    if (Base_Gsc_IsValidClientNum(playerId)) return;
+
+    const sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
+    const sDemo_t *pDemo = pPlayback->pDemo;
+    if (!pDemo)
+    {
+        stackPushUndefined();
+    }
+    else
+    {
+        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        stackPushInt(pDemoFrame->rpgNow);
+    }
+}
+
 void Gsc_Demo_ReadFrame_Angles(int playerId)
 {
     if (Base_Gsc_IsValidClientNum(playerId)) return;

@@ -17,6 +17,7 @@ struct opencj_save {
     int doubleRPGs;
     int fps;
     int flags;
+    int saveNum;
 };
 
 static opencj_save *playersaves[MAX_CLIENTS];
@@ -69,6 +70,7 @@ void gsc_saveposition_save(int id) //player savePosition_save(origin, angles, en
     }
     stackGetParamInt(7, &newsave->fps);
     stackGetParamInt(8, &newsave->flags);
+    stackGetParamInt(9, &newsave->saveNum);
 	newsave->prevsave = playersaves[id];
 	playersaves[id] = newsave;
     
@@ -116,6 +118,11 @@ void gsc_saveposition_getfps(int id)
 void gsc_saveposition_getorigin(int id)
 {
 	stackPushVector(playersaves_selected[id]->origin);
+}
+
+void gsc_saveposition_getsavenum(int id)
+{
+	stackPushInt(playersaves_selected[id]->saveNum);
 }
 
 void gsc_saveposition_getflags(int id)

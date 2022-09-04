@@ -8,6 +8,7 @@
 {"saveposition_getorigin", gsc_saveposition_getorigin, 0},
 {"saveposition_getgroundentity", gsc_saveposition_getgroundentity, 0},
 {"saveposition_getfps", gsc_saveposition_getfps, 0},
+{"saveposition_getsavenum", gsc_saveposition_getsavenum, 0},
 #ifndef COD4 // CoD4 actually has these functions
 {"setactionslot", Gsc_Utils_Void, 0},
 {"setperk", Gsc_Utils_Void, 0},
@@ -45,12 +46,18 @@
 {"selectPlaybackDemo", Gsc_Demo_SelectPlaybackDemo, 0},
 {"readPlaybackFrame_origin", Gsc_Demo_ReadFrame_Origin, 0},
 {"readPlaybackFrame_angles", Gsc_Demo_ReadFrame_Angles, 0},
+{"readPlaybackFrame_savenow", Gsc_Demo_ReadFrame_SaveNow, 0},
+{"readPlaybackFrame_loadnow", Gsc_Demo_ReadFrame_LoadNow, 0},
+{"readPlaybackFrame_rpgnow", Gsc_Demo_ReadFrame_RPGNow, 0},
+{"readPlaybackFrame_flags", Gsc_Demo_ReadFrame_Flags, 0},
+{"readPlaybackFrame_FPS", Gsc_Demo_ReadFrame_FPS, 0},
 {"skipPlaybackFrames", Gsc_Demo_SkipFrame, 0},
 {"skipPlaybackKeyFrames", Gsc_Demo_SkipKeyFrame, 0},
 {"nextPlaybackFrame", Gsc_Demo_NextFrame, 0},
 {"prevPlaybackFrame", Gsc_Demo_PrevFrame, 0},
 {"nextPlaybackKeyFrame", Gsc_Demo_ReadFrame_NextKeyFrame, 0},
 {"prevPlaybackKeyFrame", Gsc_Demo_ReadFrame_PrevKeyFrame, 0},
+
 
 
 #endif // __METHODS_HPP_
