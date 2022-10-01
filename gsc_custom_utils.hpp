@@ -19,6 +19,7 @@ void Gsc_Utils_IsEntityThinking(int);
 void Gsc_Utils_CreateRandomInt();
 void Gsc_Utils_HexStringToInt();
 void Gsc_Utils_IntToHexString();
+void Gsc_Utils_GetCodVersion();
 
 #ifdef __cplusplus
 }

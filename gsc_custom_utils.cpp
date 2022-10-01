@@ -199,6 +199,15 @@ void Gsc_Utils_IntToHexString()
     stackPushString(buf);
 }
 
+void Gsc_Utils_GetCodVersion()
+{
+#ifdef COD4
+    stackPushInt(4);
+#else
+    stackPushInt(2);
+#endif
+}
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
