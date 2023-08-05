@@ -6,16 +6,27 @@
 extern "C" {
 #endif // __cplusplus
 
-struct opencj_save {
+typedef enum // GSC hardcodes these values!
+{
+    FPS_MODE_43 = 0, // CoD2 only
+    FPS_MODE_76 = 1, // CoD2 only
+    FPS_MODE_125 = 2,
+    FPS_MODE_250 = 3, // CoD2 only
+    FPS_MODE_333 = 4, // CoD2 only
+    FPS_MODE_MIX = 5,
+    FPS_MODE_HAX = 6, // CoD4 only
+} opencj_fps_mode;
+
+struct opencj_save
+{
 	opencj_save *prevsave;
 	gentity_t *groundentity;
 	vec3_t origin;
 	vec3_t angles;
     int checkPointId;
-    int explosiveLaunches;
     int explosiveJumps;
     int doubleExplosives;
-    int fps;
+    opencj_fps_mode FPSMode;
     int flags;
     int saveNum;
 };
@@ -57,20 +68,23 @@ void gsc_saveposition_save(int id) //player savePosition_save(origin, angles, en
     {
 		newsave->groundentity = NULL;
     }
-    stackGetParamInt(3, &newsave->explosiveLaunches);
-    stackGetParamInt(4, &newsave->explosiveJumps);
-    stackGetParamInt(5, &newsave->doubleExplosives);
-    if(stackGetParamType(6) == STACK_INT)
+    stackGetParamInt(3, &newsave->explosiveJumps);
+    stackGetParamInt(4, &newsave->doubleExplosives);
+    if(stackGetParamType(5) == STACK_INT)
     {
-        stackGetParamInt(6, &newsave->checkPointId);
+        stackGetParamInt(5, &newsave->checkPointId);
     }
     else
     {
         newsave->checkPointId = -1;
     }
-    stackGetParamInt(7, &newsave->fps);
-    stackGetParamInt(8, &newsave->flags);
-    stackGetParamInt(9, &newsave->saveNum);
+
+    int FPSMode;
+    stackGetParamInt(6, &FPSMode);
+    newsave->FPSMode = (opencj_fps_mode)FPSMode;
+
+    stackGetParamInt(7, &newsave->flags);
+    stackGetParamInt(8, &newsave->saveNum);
 	newsave->prevsave = playersaves[id];
 	playersaves[id] = newsave;
     
@@ -110,9 +124,9 @@ void gsc_saveposition_getangles(int id)
 	stackPushVector(playersaves_selected[id]->angles);
 }
 
-void gsc_saveposition_getfps(int id)
+void gsc_saveposition_getfpsmode(int id)
 {
-	stackPushInt(playersaves_selected[id]->fps);
+	stackPushInt(playersaves_selected[id]->FPSMode);
 }
 
 void gsc_saveposition_getorigin(int id)
@@ -141,11 +155,6 @@ void gsc_saveposition_getgroundentity(int id)
 		stackPushUndefined();
 	else
 		stackPushEntity(playersaves_selected[id]->groundentity);
-}
-
-void gsc_saveposition_getexplosivelaunches(int id)
-{
-    stackPushInt(playersaves_selected[id]->explosiveLaunches);
 }
 
 void gsc_saveposition_getexplosivejumps(int id)
