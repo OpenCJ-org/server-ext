@@ -656,7 +656,7 @@ void Gsc_Demo_ReadFrame_Origin(int playerId)
     }
     else
     {
-        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame]; // CoD2 stock Scr_AddVector doesn't like const here
         stackPushVector(pDemoFrame->origin);
     }
 }
@@ -673,7 +673,7 @@ void Gsc_Demo_ReadFrame_SaveNow(int playerId)
     }
     else
     {
-        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
         stackPushInt(pDemoFrame->saveNow);
     }
 }
@@ -758,7 +758,7 @@ void Gsc_Demo_ReadFrame_Angles(int playerId)
     }
     else
     {
-        const sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame];
+        sDemoFrame_t *pDemoFrame = &pDemo->pDemoFrames[pPlayback->selectedFrame]; // CoD2 stock Scr_AddVector doesn't like const here
         stackPushVector(pDemoFrame->angles);
     }
 }

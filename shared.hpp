@@ -21,6 +21,8 @@
 
 #define ENTFLAG_INVISIBLE   0x800u
 
+extern cvar_t *sv_maxclients;
+
 #else
 #ifdef COD4 // ============================================================= COD4
 

@@ -12,9 +12,9 @@ struct opencj_save {
 	vec3_t origin;
 	vec3_t angles;
     int checkPointId;
-    int RPGJumps;
-    int nadeJumps;
-    int doubleRPGs;
+    int explosiveLaunches;
+    int explosiveJumps;
+    int doubleExplosives;
     int fps;
     int flags;
     int saveNum;
@@ -57,9 +57,9 @@ void gsc_saveposition_save(int id) //player savePosition_save(origin, angles, en
     {
 		newsave->groundentity = NULL;
     }
-    stackGetParamInt(3, &newsave->RPGJumps);
-    stackGetParamInt(4, &newsave->nadeJumps);
-    stackGetParamInt(5, &newsave->doubleRPGs);
+    stackGetParamInt(3, &newsave->explosiveLaunches);
+    stackGetParamInt(4, &newsave->explosiveJumps);
+    stackGetParamInt(5, &newsave->doubleExplosives);
     if(stackGetParamType(6) == STACK_INT)
     {
         stackGetParamInt(6, &newsave->checkPointId);
@@ -143,19 +143,19 @@ void gsc_saveposition_getgroundentity(int id)
 		stackPushEntity(playersaves_selected[id]->groundentity);
 }
 
-void gsc_saveposition_getnadejumps(int id)
+void gsc_saveposition_getexplosivelaunches(int id)
 {
-    stackPushInt(playersaves_selected[id]->nadeJumps);
+    stackPushInt(playersaves_selected[id]->explosiveLaunches);
 }
 
-void gsc_saveposition_getrpgjumps(int id)
+void gsc_saveposition_getexplosivejumps(int id)
 {
-    stackPushInt(playersaves_selected[id]->RPGJumps);
+    stackPushInt(playersaves_selected[id]->explosiveJumps);
 }
 
-void gsc_saveposition_getdoublerpg(int id)
+void gsc_saveposition_getdoubleexplosives(int id)
 {
-    stackPushInt(playersaves_selected[id]->doubleRPGs);
+    stackPushInt(playersaves_selected[id]->doubleExplosives);
 }
 
 void gsc_saveposition_getcheckpointid(int id)
