@@ -111,7 +111,7 @@ void gsc_saveposition_selectwithoutflag(int id) // player gsc_saveposition_selec
     // Select the last save that matches this criteria
     playersaves_selected[id] = playersaves[otherPlayerId];
     int backwardsCount = 0;
-    while (true)
+    while (playersaves_selected[id] != NULL)
     {
         // Check if this save matches the criteria of not having specific flags
         int saveFlags = playersaves_selected[id]->flags;
