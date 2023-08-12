@@ -115,7 +115,7 @@ void gsc_saveposition_selectwithoutflag(int id) // player gsc_saveposition_selec
     {
         // Check if this save matches the criteria of not having specific flags
         int saveFlags = playersaves_selected[id]->flags;
-        if ((saveFlags & flags) != flags)
+        if ((saveFlags & flags) == 0)
         {
             stackPushInt(backwardsCount); // Successfully found
             return;
