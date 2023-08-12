@@ -3,6 +3,7 @@
 
 {"saveposition_initclient", gsc_saveposition_initclient, 0},
 {"saveposition_save", gsc_saveposition_save, 0},
+{"saveposition_selectwithoutflag", gsc_saveposition_selectwithoutflag, 0},
 {"saveposition_selectsave", gsc_saveposition_selectsave, 0},
 {"saveposition_getangles", gsc_saveposition_getangles, 0},
 {"saveposition_getorigin", gsc_saveposition_getorigin, 0},

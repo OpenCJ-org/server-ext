@@ -91,6 +91,49 @@ void gsc_saveposition_save(int id) //player savePosition_save(origin, angles, en
 	stackPushInt(0);
 }
 
+void gsc_saveposition_selectwithoutflag(int id) // player gsc_saveposition_selectwithoutflag(flags, [otherEntityNum])
+{
+    int flags = 0;
+    stackGetParamInt(0, &flags);
+    if (flags == 0)
+    {
+        stackPushUndefined();
+        return;
+    }
+
+    // Player might be requesting it for a different player's saves (teleporting for example)
+    int otherPlayerId = id; // By default, the requesting player
+    if (Scr_GetNumParam() > 1)
+    {
+        stackGetParamInt(1, &otherPlayerId);
+    }
+
+    // Select the last save that matches this criteria
+    playersaves_selected[id] = playersaves[otherPlayerId];
+    int backwardsCount = 0;
+    while (true)
+    {
+        // Check if this save matches the criteria of not having specific flags
+        int saveFlags = playersaves_selected[id]->flags;
+        if ((saveFlags & flags) != flags)
+        {
+            stackPushInt(backwardsCount); // Successfully found
+            return;
+        }
+
+        // Check if there are any saves left
+        if (playersaves_selected[id]->prevsave == NULL)
+        {
+            stackPushUndefined();
+            return;
+        }
+
+        // Go back further
+        playersaves_selected[id] = playersaves_selected[id]->prevsave;
+        backwardsCount++;
+    }
+}
+
 void gsc_saveposition_selectsave(int id) //player savePosition_selectSave(backwardsCount)
 {
 	int backwardscount;
