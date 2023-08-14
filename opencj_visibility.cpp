@@ -192,6 +192,8 @@ void Gsc_Vis_UpdatePlayerVisibility()
         gentity_t *wantsToHide = &g_entities[i];
         if (!wantsToHide->client || (svs.clients[i].state != CS_ACTIVE)) continue;
 
+
+
         // j = player that will be hidden
         for (int j = 0; j < sv_maxclients->integer; j++)
         {
@@ -200,7 +202,11 @@ void Gsc_Vis_UpdatePlayerVisibility()
             gentity_t *willBeHidden = &g_entities[j];
             if (!willBeHidden->client || (svs.clients[j].state != CS_ACTIVE)) continue;
 
-            if (opencj_globalHideList[j])
+            if(svs.clients[i].gentity->client->sess.sessionState == SESS_STATE_SPECTATOR)
+            {
+                setEntityVisibilityForPlayer(willBeHidden, wantsToHide, false);
+            }
+            else if (opencj_globalHideList[j])
             {
                 setEntityVisibilityForPlayer(willBeHidden, wantsToHide, true);
             }
