@@ -34,6 +34,9 @@
 {"mysql_append_longquery", gsc_mysql_append_longquery},
 {"mysql_async_execute_longquery", gsc_mysql_async_execute_longquery},
 {"updateplayervisibility", Gsc_Vis_UpdatePlayerVisibility},
+{"discord_connect", Gsc_Discord_Connect},
+{"discord_getevent", Gsc_Discord_GetEvent},
+{"discord_onevent", Gsc_Discord_OnEvent},
 #ifndef COD4
 {"setminimap", Gsc_Utils_VoidFunc},
 {"getConfigStringByIndex", Gsc_Utils_VoidFunc},
