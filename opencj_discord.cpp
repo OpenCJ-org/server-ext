@@ -36,6 +36,13 @@ static int g_fileDescriptor = -1;
 
 static int setupAndConnect()
 {
+    extern cvar_t *net_port;
+    if (net_port->integer != 28960)
+    {
+        // Don't allow any other server than main to connect for now
+        return -1;
+    }
+
     // Check if we need to close the socket first
     if (g_fileDescriptor != -1)
     {
