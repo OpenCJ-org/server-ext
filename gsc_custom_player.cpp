@@ -79,22 +79,25 @@ void Gsc_Player_setOriginandAngles(int id)
 
 	//set origin
 	VectorCopy(origin, ent->client->ps.origin);
-	ent->client->sess.cmd.serverTime = level.time; //if this isnt set then errordecay takes place
+
 
 	//reset velocity
 	ent->client->ps.velocity[0] = 0;
 	ent->client->ps.velocity[1] = 0;
 	ent->client->ps.velocity[2] = 0;
 
+#ifdef COD4
 	ent->client->ps.sprintState.sprintButtonUpRequired = 0;
 	ent->client->ps.sprintState.sprintDelay = 0;
 	ent->client->ps.sprintState.lastSprintStart = 0;
 	ent->client->ps.sprintState.lastSprintEnd = 0;
 	ent->client->ps.sprintState.sprintStartMaxLength = 0;
+#endif
 
 	//pretend we're not proning so  prone angle is ok
 	int flags = ent->client->ps.pm_flags;
 	ent->client->ps.pm_flags &= ~PMF_PRONE;
+	ent->client->sess.cmd.serverTime = level.time; //if this isnt set then errordecay takes place
 
 	SetClientViewAngle(ent, angles);
 
@@ -103,6 +106,9 @@ void Gsc_Player_setOriginandAngles(int id)
 	memset(&pm, 0, sizeof(pm));
 	pm.ps = &ent->client->ps;
 	memcpy(&pm.cmd, &ent->client->sess.cmd, sizeof(pm.cmd));
+    pm.cmd.serverTime = level.time - 50;
+
+    ent->client->sess.oldcmd.serverTime = level.time - 100;
 	pm.oldcmd = ent->client->sess.oldcmd;
 	pm.tracemask = 42008593;
 	pm.handler = 1;
