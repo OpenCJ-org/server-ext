@@ -27,6 +27,8 @@ extern cvar_t *sv_maxclients;
 #ifdef COD4 // ============================================================= COD4
 
 #include "../cod4x-server/src/scr_vm.h"
+#include "../cod4x-server/src/g_shared.h"
+#include "../cod4x-server/src/bg_public.h"
 
 #define KEY_MASK_FIRE           1
 #define KEY_MASK_MELEE          4

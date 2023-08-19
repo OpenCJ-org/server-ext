@@ -23,6 +23,7 @@
 #else
 #endif
 {"jumpclearstateextended", Gsc_Player_JumpClearStateExtended, 0},
+{"setoriginandangles", Gsc_Player_setOriginandAngles, 0},
 {"getgroundentity", Gsc_Player_GetGroundEntity, 0},
 {"getjumpslowdowntimer", Gsc_player_GetJumpSlowdownTimer, 0},
 {"saveposition_getexplosivejumps", gsc_saveposition_getexplosivejumps, 0},

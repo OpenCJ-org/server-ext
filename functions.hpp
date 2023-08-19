@@ -49,5 +49,6 @@
 {"destroyDemo", Gsc_Demo_DestroyDemo, 0},
 {"completeDemo", Gsc_Demo_CompleteDemo, 0},
 {"addFrameToDemo", Gsc_Demo_AddFrame, 0},
+{"setconfigstringbyindex", Gsc_Utils_setConfigStringByIndex, 0},
 
 #endif // __FUNCTIONS_HPP_

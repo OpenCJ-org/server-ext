@@ -15,6 +15,15 @@ void Gsc_Utils_Void(int entnum)
     (void)entnum; // Unused
 }
 
+void Gsc_Utils_setConfigStringByIndex()
+{
+    int index = 0;
+    stackGetParamInt(0, &index);
+    char *value = NULL;
+    stackGetParamString(1, &value);
+    SV_SetConfigstring(index, value);
+}
+
 void Gsc_Utils_ZeroInt(int entnum)
 {
     stackPushInt(0);

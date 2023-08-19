@@ -20,6 +20,7 @@ void Gsc_Utils_CreateRandomInt();
 void Gsc_Utils_HexStringToInt();
 void Gsc_Utils_IntToHexString();
 void Gsc_Utils_GetCodVersion();
+void Gsc_Utils_setConfigStringByIndex();
 
 #ifdef __cplusplus
 }

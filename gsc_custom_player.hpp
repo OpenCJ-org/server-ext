@@ -15,6 +15,7 @@ void Gsc_player_GetJumpSlowdownTimer(int id);
 void Gsc_Player_setWeaponAmmoClip(int id);
 void Gsc_Player_SV_GameSendServerCommand(int id);
 void Gsc_Player_ClearFPSFilter(int id);
+void Gsc_Player_setOriginandAngles(int id);
 
 #ifdef __cplusplus
 }
