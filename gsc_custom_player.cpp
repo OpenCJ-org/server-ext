@@ -114,6 +114,11 @@ void Gsc_Player_setOriginandAngles(int id)
 	pm.handler = 1;
 	Pmove(&pm);
 
+	//reset velocity
+	ent->client->ps.velocity[0] = 0;
+	ent->client->ps.velocity[1] = 0;
+	ent->client->ps.velocity[2] = 0;
+
 	//restore prone if any
 	ent->client->ps.pm_flags = flags;
 
