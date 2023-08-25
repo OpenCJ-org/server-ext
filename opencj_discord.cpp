@@ -20,6 +20,10 @@ typedef enum
     PLAYER_MESSAGE          = 0,
     MAP_STARTED             = 1,
     PLAYER_COUNT_CHANGED    = 2,
+    PLAYER_JOINED           = 3,
+    PLAYER_LEFT             = 4,
+    RUN_FINISHED            = 5,
+    PLAYER_RENAMED          = 6,
 } eGameEvent_t;
 
 // These events are from Discord to the game
@@ -33,7 +37,7 @@ static int g_fileDescriptor = -1;
 
 // Currently, just set latest Discord event, if one comes too quick, overwrite it.
 // In future it may be an idea to queue them, but there'd have to be overflow guards
-
+static bool g_hasLogged = false;
 static int setupAndConnect()
 {
     extern cvar_t *net_port;
@@ -50,6 +54,7 @@ static int setupAndConnect()
         close(g_fileDescriptor);
         g_fileDescriptor = -1;
         Com_PrintError(CON_CHANNEL_ERROR, "Lost connection with Discord socket\n");
+        g_hasLogged = false;
     }
 
     g_fileDescriptor = socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
@@ -61,12 +66,17 @@ static int setupAndConnect()
         if (connect(g_fileDescriptor, (struct sockaddr *)&server, sizeof(struct sockaddr_un)) >= 0)
         {
             Com_Printf(CON_CHANNEL_SYSTEM, "Successfully connected to Discord socket\n");
+            g_hasLogged = false;
         }
         else
         {
             close(g_fileDescriptor);
             g_fileDescriptor = -1;
-            Com_PrintWarning(CON_CHANNEL_SYSTEM, "Could not connect to Discord socket\n");
+            if (!g_hasLogged)
+            {
+                Com_PrintWarning(CON_CHANNEL_SYSTEM, "Could not connect to Discord socket\n");
+                g_hasLogged = true;
+            }
         }
     }
     else
@@ -199,6 +209,75 @@ void Gsc_Discord_OnEvent() // Push an event to Discord
             stackGetParamInt(1, &playerCount);
 
             snprintf(txBuf, sizeof(txBuf), "%d %d\n", gameEventType, playerCount);
+        } break;
+
+        case PLAYER_JOINED:
+        case PLAYER_LEFT:
+        {
+            if ((Scr_GetNumParam() != 2) || (stackGetParamType(1) != STACK_STRING))
+            {
+                stackError("Expected 2 arguments: eventType (int), playerName (string)");
+                return;
+            }
+
+            char *playerName = NULL;
+            stackGetParamString(1, &playerName);
+
+            if (playerName != NULL)
+            {
+                snprintf(txBuf, sizeof(txBuf), "%d %s\n", gameEventType, playerName);
+            }
+        } break;
+
+        case RUN_FINISHED:
+        {
+            if ((Scr_GetNumParam() != 6) || (stackGetParamType(1) != STACK_STRING) ||
+                                            (stackGetParamType(2) != STACK_INT) ||
+                                            (stackGetParamType(3) != STACK_STRING) ||
+                                            (stackGetParamType(4) != STACK_STRING) ||
+                                            (stackGetParamType(5) != STACK_STRING))
+            {
+                stackError("Expected 6 arguments: event (int), name (string), runID (int), time (string), mapName (string), route (string)");
+                return;
+            }
+
+            char *playerName = NULL;
+            stackGetParamString(1, &playerName);
+            if (playerName == NULL)
+            {
+                return;
+            }
+
+            int runID = -1;
+            stackGetParamInt(2, &runID);
+            if (runID == -1)
+            {
+                return;
+            }
+
+            char *timeStr = NULL;
+            stackGetParamString(3, &timeStr);
+            if (timeStr == NULL)
+            {
+                return;
+            }
+
+            char *mapName = NULL;
+            stackGetParamString(4, &mapName);
+            if (mapName == NULL)
+            {
+                return;
+            }
+
+            char *routeName = NULL;
+            stackGetParamString(5, &routeName);
+            if (routeName == NULL)
+            {
+                return;
+            }
+
+            printf("\nyes, event being sent\n");
+            snprintf(txBuf, sizeof(txBuf), "%d %s;%d;%s;%s;%s\n", gameEventType, playerName, runID, timeStr, mapName, routeName);
         } break;
     }
 
