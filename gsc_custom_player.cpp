@@ -79,6 +79,7 @@ void Gsc_Player_setOriginandAngles(int id)
 
 	//set origin
 	VectorCopy(origin, ent->client->ps.origin);
+    G_SetOrigin(ent, origin);
 
 
 	//reset velocity
