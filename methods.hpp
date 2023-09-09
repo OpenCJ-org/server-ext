@@ -22,8 +22,11 @@
 {"followplayer", Gsc_Utils_Void, 0},
 #else
 #endif
+{"setPMFlags", Gsc_Player_SetPMFlags, 0},
+{"getPMFlags", Gsc_Player_GetPMFlags, 0},
+{"getPMTime", Gsc_Player_GetPMTime, 0},
 {"jumpclearstateextended", Gsc_Player_JumpClearStateExtended, 0},
-{"setoriginandangles", Gsc_Player_setOriginandAngles, 0},
+{"setoriginandangles", Gsc_Player_setOriginAndAngles, 0},
 {"getgroundentity", Gsc_Player_GetGroundEntity, 0},
 {"getjumpslowdowntimer", Gsc_player_GetJumpSlowdownTimer, 0},
 {"saveposition_getexplosivejumps", gsc_saveposition_getexplosivejumps, 0},
@@ -32,6 +35,7 @@
 {"saveposition_getflags", gsc_saveposition_getflags, 0},
 {"isthinking", Gsc_Utils_IsEntityThinking, 0},
 {"SV_GameSendServerCommand", Gsc_Player_SV_GameSendServerCommand, 0},
+{"getqueuedreliablemessages", Gsc_Player_GetQueuedReliableMessages, 0},
 {"clearfpsfilter", Gsc_Player_ClearFPSFilter, 0},
 {"addplayertohidelist", Gsc_Vis_AddPlayerToHideList, 0},
 {"removeplayerfromhidelist", Gsc_Vis_RemovePlayerFromHideList, 0},

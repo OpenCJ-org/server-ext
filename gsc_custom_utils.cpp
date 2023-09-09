@@ -1,6 +1,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h> // For isalnum
 
 #include "gsc_custom_utils.hpp"
 
@@ -160,17 +161,41 @@ void Gsc_Utils_IsEntityThinking(int entnum)
 #endif // COD4
 }
 
+static bool isRandomSeeded = false;
+void _seedRandom()
+{
+    if(!isRandomSeeded)
+    {
+        srand(time(NULL) ^ getpid());
+        isRandomSeeded = true;
+    }
+}
 void Gsc_Utils_CreateRandomInt()
 {
-	static bool isInitialized = false;
-	if(!isInitialized)
-	{
-		srand(time(NULL) ^ getpid());
-		isInitialized = true;
-	}
-    
-	int res = ((rand() & 0xFFFF) << 16) | (rand() & 0xFFFF);
-	stackPushInt(res);
+    _seedRandom();
+
+    int res = ((rand() & 0xFFFF) << 16) | (rand() & 0xFFFF);
+    stackPushInt(res);
+}
+
+void Gsc_Utils_Rand()
+{
+    _seedRandom();
+    stackPushInt(rand());
+}
+
+void Gsc_Utils_IsAlphaNumeric()
+{
+    char *buf = NULL;
+    stackGetParamString(0, &buf);
+
+    if (buf == NULL)
+    {
+        stackPushInt(0);
+        return;
+    }
+
+    stackPushInt(isalnum(buf[0]) ? 1 : 0);
 }
 
 void Gsc_Utils_HexStringToInt()

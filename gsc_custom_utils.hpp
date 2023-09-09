@@ -17,6 +17,8 @@ void Gsc_Utils_Printf();
 void Gsc_Utils_VectorScale();
 void Gsc_Utils_IsEntityThinking(int);
 void Gsc_Utils_CreateRandomInt();
+void Gsc_Utils_Rand();
+void Gsc_Utils_IsAlphaNumeric();
 void Gsc_Utils_HexStringToInt();
 void Gsc_Utils_IntToHexString();
 void Gsc_Utils_GetCodVersion();

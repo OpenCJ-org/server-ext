@@ -7,6 +7,8 @@
 {"hexstringtoint", Gsc_Utils_HexStringToInt, 0},
 {"inttohexstring", Gsc_Utils_IntToHexString, 0},
 {"createrandomint", Gsc_Utils_CreateRandomInt, 0},
+{"rand", Gsc_Utils_Rand, 0},
+{"isalphanumeric", Gsc_Utils_IsAlphaNumeric, 0},
 {"getcodversion", Gsc_Utils_GetCodVersion, 0},
 {"mysql_init", gsc_mysql_init},
 {"mysql_real_connect", gsc_mysql_real_connect},

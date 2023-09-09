@@ -4,6 +4,60 @@
 extern "C" {
 #endif // __cplusplus
 
+void Gsc_Player_SetPMFlags(int id)
+{
+    int numParams = Scr_GetNumParam();
+    const char *szSyntax = "expected 1-2 arguments: <pm_flags> [pm_time]";
+    if ((numParams < 1) || (numParams > 2))
+    {
+        stackError(szSyntax);
+        return;
+    }
+
+    if (stackGetParamType(0) != STACK_INT)
+    {
+        stackError(szSyntax);
+        return;
+    }
+
+    if ((numParams > 1) && (stackGetParamType(1) != STACK_INT))
+    {
+        stackError(szSyntax);
+        return;
+    }
+
+    int flags = 0;
+    stackGetParamInt(0, &flags);
+
+    int time = 0;
+    if (numParams > 1)
+    {
+        stackGetParamInt(1, &time);
+    }
+
+    playerState_t *ps = SV_GameClientNum(id);
+    if (ps != NULL)
+    {
+        ps->pm_flags = flags;
+        if (numParams > 1)
+        {
+            ps->pm_time = time;
+        }
+    }
+}
+
+void Gsc_Player_GetPMFlags(int id)
+{
+    playerState_t *ps = SV_GameClientNum(id);
+    stackPushInt(ps->pm_flags);
+}
+
+void Gsc_Player_GetPMTime(int id)
+{
+    playerState_t *ps = SV_GameClientNum(id);
+    stackPushInt(ps->pm_time);
+}
+
 void Gsc_Player_GetGroundEntity(int id)
 {
     playerState_t *ps = SV_GameClientNum(id);
@@ -16,7 +70,7 @@ void Gsc_Player_GetGroundEntity(int id)
     stackPushUndefined();
 }
 
-void Gsc_Player_setOriginandAngles(int id)
+void Gsc_Player_setOriginAndAngles(int id)
 {
 	//sets origin, angles
 	//resets pm_flags and velocity
@@ -151,7 +205,7 @@ void Gsc_Player_SV_GameSendServerCommand(int id)
 	int reliable;
 	char *message;
 
-	if ( ! stackGetParams("si", &message, &reliable))
+	if (!stackGetParams("si", &message, &reliable))
 	{
 		stackError("Gsc_Player_SV_GameSendServerCommand() one or more arguments is undefined or has a wrong type");
 		stackPushUndefined();
@@ -160,6 +214,19 @@ void Gsc_Player_SV_GameSendServerCommand(int id)
 
 	SV_GameSendServerCommand(id, reliable, message);
 	stackPushBool(qtrue);
+}
+
+void Gsc_Player_GetQueuedReliableMessages(int id)
+{
+    client_t *pClient = &svs.clients[id];
+    if (!pClient)
+    {
+        stackPushUndefined();
+        return;
+    }
+
+    int nrQueued = pClient->reliableSequence - pClient->reliableAcknowledge;
+    stackPushInt(nrQueued);
 }
 
 void Gsc_Player_ClearFPSFilter(int id)
