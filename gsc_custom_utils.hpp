@@ -22,7 +22,9 @@ void Gsc_Utils_IsAlphaNumeric();
 void Gsc_Utils_HexStringToInt();
 void Gsc_Utils_IntToHexString();
 void Gsc_Utils_GetCodVersion();
+void Gsc_Utils_constructMessage();
 void Gsc_Utils_setConfigStringByIndex();
+void Gsc_SV_GetConfigString();
 
 #ifdef __cplusplus
 }

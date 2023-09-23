@@ -52,5 +52,7 @@
 {"completeDemo", Gsc_Demo_CompleteDemo, 0},
 {"addFrameToDemo", Gsc_Demo_AddFrame, 0},
 {"setconfigstringbyindex", Gsc_Utils_setConfigStringByIndex, 0},
+{"sv_getconfigstring", Gsc_SV_GetConfigString, 0},
+{"constructMessage", Gsc_Utils_constructMessage, 0},
 
 #endif // __FUNCTIONS_HPP_

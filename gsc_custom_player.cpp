@@ -200,6 +200,22 @@ void Gsc_Player_setWeaponAmmoClip(int id) //pls comment out for cod4
 {
 }
 
+void Gsc_Player_switchToWeaponSeamless(int id)
+{
+    const char *szWeaponName = NULL;
+    if (stackGetParamString(0, &szWeaponName))
+    {
+        playerState_t *ps = SV_GameClientNum(id);
+        int weaponIdx = G_GetWeaponIndexForName(szWeaponName);
+        if (BG_IsWeaponValid(ps, weaponIdx))
+        {
+            ps->weapon = weaponIdx;
+            //ps->weaponstate = 0; // WEAPON_READY
+            SV_GameSendServerCommand(id, 1, va("%c %i", 'a', weaponIdx));
+        }
+    }
+}
+
 void Gsc_Player_SV_GameSendServerCommand(int id)
 {
 	int reliable;

@@ -16,6 +16,7 @@ void Gsc_Player_JumpClearStateExtended(int id);
 void Gsc_Player_GetGroundEntity(int id);
 void Gsc_player_GetJumpSlowdownTimer(int id);
 void Gsc_Player_setWeaponAmmoClip(int id);
+void Gsc_Player_switchToWeaponSeamless(int id);
 void Gsc_Player_SV_GameSendServerCommand(int id);
 void Gsc_Player_GetQueuedReliableMessages(int id);
 void Gsc_Player_ClearFPSFilter(int id);

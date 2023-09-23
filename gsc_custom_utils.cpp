@@ -16,6 +16,28 @@ void Gsc_Utils_Void(int entnum)
     (void)entnum; // Unused
 }
 
+void Gsc_Utils_constructMessage()
+{
+    int nrParams = Scr_GetNumParam();
+    if (nrParams == 0)
+    {
+        Scr_Error("Usage: constructMessage(1 or more (localized) strings)\n");
+        return;
+    }
+
+    /*
+    int firstParmIndex
+    int lastParmIndex
+    const char *errorContext
+    char *string
+    unsigned int stringLimit
+    */
+   char buf[1024] = {0};
+   Scr_ConstructMessageString(0, (nrParams - 1), "Combined string of constructMessage", buf, sizeof(buf));
+
+   stackPushString(buf);
+}
+
 void Gsc_Utils_setConfigStringByIndex()
 {
     int index = 0;
@@ -23,6 +45,17 @@ void Gsc_Utils_setConfigStringByIndex()
     char *value = NULL;
     stackGetParamString(1, &value);
     SV_SetConfigstring(index, value);
+}
+
+void Gsc_SV_GetConfigString()
+{
+    char buf[1024] = {0};
+    int idx = 0;
+    if (stackGetParamInt(0, &idx))
+    {
+        SV_GetConfigstring(idx, buf, sizeof(buf));
+    }
+    stackPushString(buf);
 }
 
 void Gsc_Utils_ZeroInt(int entnum)

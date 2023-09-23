@@ -27,6 +27,7 @@
 {"getPMTime", Gsc_Player_GetPMTime, 0},
 {"jumpclearstateextended", Gsc_Player_JumpClearStateExtended, 0},
 {"setoriginandangles", Gsc_Player_setOriginAndAngles, 0},
+{"switchtoweaponseamless", Gsc_Player_switchToWeaponSeamless, 0},
 {"getgroundentity", Gsc_Player_GetGroundEntity, 0},
 {"getjumpslowdowntimer", Gsc_player_GetJumpSlowdownTimer, 0},
 {"saveposition_getexplosivejumps", gsc_saveposition_getexplosivejumps, 0},
