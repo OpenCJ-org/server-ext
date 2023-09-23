@@ -149,10 +149,14 @@ void Gsc_Player_setOriginAndAngles(int id)
 	ent->client->ps.sprintState.sprintStartMaxLength = 0;
 #endif
 
-	//pretend we're not proning so  prone angle is ok
+	//pretend we're not proning so that prone angle is ok after having called SetClientViewAngle (otherwise it gets a correction)
 	int flags = ent->client->ps.pm_flags;
 	ent->client->ps.pm_flags &= ~PMF_PRONE;
 	ent->client->sess.cmd.serverTime = level.time; //if this isnt set then errordecay takes place
+
+    // Prevent players from being able able to walk around without starting a run (because WASD callback is only called)
+    extern void opencj_clearPlayerMovementCheckVars(int);
+    opencj_clearPlayerMovementCheckVars(id);
 
 	SetClientViewAngle(ent, angles);
 
