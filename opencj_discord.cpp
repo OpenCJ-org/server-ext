@@ -276,7 +276,6 @@ void Gsc_Discord_OnEvent() // Push an event to Discord
                 return;
             }
 
-            printf("\nyes, event being sent\n");
             snprintf(txBuf, sizeof(txBuf), "%d %s;%d;%s;%s;%s\n", gameEventType, playerName, runID, timeStr, mapName, routeName);
         } break;
     }
