@@ -16,6 +16,19 @@ void Gsc_Utils_Void(int entnum)
     (void)entnum; // Unused
 }
 
+void Gsc_Utils_setEntOrigin(int id)
+{
+    vec3_t origin;
+    if (!stackGetParams("v", &origin))
+    {
+        stackError("Gsc_Utils_setEntOrigin expects 1 argument: origin");
+        return;
+    }
+
+    gentity_t *pEnt = &g_entities[id];
+    G_SetOrigin(pEnt, origin);
+}
+
 void Gsc_Utils_constructMessage()
 {
     int nrParams = Scr_GetNumParam();

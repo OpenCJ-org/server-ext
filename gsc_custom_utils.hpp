@@ -25,6 +25,7 @@ void Gsc_Utils_GetCodVersion();
 void Gsc_Utils_constructMessage();
 void Gsc_Utils_setConfigStringByIndex();
 void Gsc_SV_GetConfigString();
+void Gsc_Utils_setEntOrigin(int);
 
 #ifdef __cplusplus
 }
