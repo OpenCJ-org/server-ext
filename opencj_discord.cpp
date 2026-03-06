@@ -1,17 +1,25 @@
-// TODO this class is currently Linux-specific. A Windows port needs to be added
-
 #include "shared.hpp"
 
-#include <stdlib.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <sys/un.h>
-#include <errno.h>
-
-#ifdef COD4
-    #define SOCKET_PATH     "/tmp/opencj_events_cod4"
+#ifdef __WIN32
+#include <winsock2.h>
 #else
-    #define SOCKET_PATH     "/tmp/opencj_events_cod2"
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#endif
+
+#define DISCORD_PORT 28961
+
+#ifdef __WIN32
+typedef SOCKET socket_t;
+#define INVALID_SOCK INVALID_SOCKET
+#define CLOSESOCK(fd) closesocket(fd)
+#else
+typedef int socket_t;
+#define INVALID_SOCK (-1)
+#define CLOSESOCK(fd) close(fd)
 #endif
 
 // These events are from the game to Discord
@@ -32,74 +40,84 @@ typedef enum
     DISCORD_MESSAGE         = 0,
 } eDiscordEvent_t;
 
-
-static int g_fileDescriptor = -1;
+static socket_t g_fileDescriptor = INVALID_SOCK;
 
 // Currently, just set latest Discord event, if one comes too quick, overwrite it.
 // In future it may be an idea to queue them, but there'd have to be overflow guards
 static bool g_hasLogged = false;
-static int setupAndConnect()
+
+static void setNonBlocking(socket_t fd)
+{
+#ifdef __WIN32
+    u_long mode = 1;
+    ioctlsocket(fd, FIONBIO, &mode);
+#else
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK);
+#endif
+}
+
+static void setupAndConnect()
 {
     extern cvar_t *net_port;
     if (net_port->integer != 28960)
     {
         // Don't allow any other server than main to connect for now
-        return -1;
+        return;
     }
 
     // Check if we need to close the socket first
-    if (g_fileDescriptor != -1)
+    if (g_fileDescriptor != INVALID_SOCK)
     {
         // Socket error, disconnect
-        close(g_fileDescriptor);
-        g_fileDescriptor = -1;
+        CLOSESOCK(g_fileDescriptor);
+        g_fileDescriptor = INVALID_SOCK;
         Com_PrintError(CON_CHANNEL_ERROR, "Lost connection with Discord socket\n");
         g_hasLogged = false;
     }
 
-    g_fileDescriptor = socket(PF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0);
-    if (g_fileDescriptor >= 0)
+    g_fileDescriptor = socket(AF_INET, SOCK_STREAM, 0);
+
+    if (g_fileDescriptor == INVALID_SOCK)
     {
-        struct sockaddr_un server;
-        server.sun_family = AF_UNIX;
-        strcpy(server.sun_path, SOCKET_PATH);
-        if (connect(g_fileDescriptor, (struct sockaddr *)&server, sizeof(struct sockaddr_un)) >= 0)
-        {
-            Com_Printf(CON_CHANNEL_SYSTEM, "Successfully connected to Discord socket\n");
-            g_hasLogged = false;
-        }
-        else
-        {
-            close(g_fileDescriptor);
-            g_fileDescriptor = -1;
-            if (!g_hasLogged)
-            {
-                Com_PrintWarning(CON_CHANNEL_SYSTEM, "Could not connect to Discord socket\n");
-                g_hasLogged = true;
-            }
-        }
+        Com_PrintError(CON_CHANNEL_ERROR, "Could not setup Discord socket\n");
+        return;
+    }
+
+    struct sockaddr_in server;
+    server.sin_family = AF_INET;
+    server.sin_port = htons(DISCORD_PORT);
+    server.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    if (connect(g_fileDescriptor, (sockaddr*)&server, sizeof(server)) >= 0)
+    {
+        setNonBlocking(g_fileDescriptor);
+        Com_Printf(CON_CHANNEL_SYSTEM, "Successfully connected to Discord socket\n");
+        g_hasLogged = false;
     }
     else
     {
-        g_fileDescriptor = -1;
-        Com_PrintError(CON_CHANNEL_ERROR, "Could not setup Discord socket\n");
+        CLOSESOCK(g_fileDescriptor);
+        g_fileDescriptor = INVALID_SOCK;
+        if (!g_hasLogged)
+        {
+            Com_PrintWarning(CON_CHANNEL_SYSTEM, "Could not connect to Discord socket\n");
+            g_hasLogged = true;
+        }
     }
-
-    return g_fileDescriptor;
 }
 
 void Gsc_Discord_Connect()
 {
-    if (g_fileDescriptor == -1)
+    if (g_fileDescriptor == INVALID_SOCK)
     {
-        (void)setupAndConnect();
+        setupAndConnect();
     }
     else
     {
         // Check if connection is alive
         int error = 0;
-        socklen_t len = sizeof(error);
-        int result = getsockopt(g_fileDescriptor, SOL_SOCKET, SO_ERROR, &error, &len);
+        int len = sizeof(error);
+        int result = getsockopt(g_fileDescriptor, SOL_SOCKET, SO_ERROR, (char*)&error, &len);
         if (result == 0)
         {
             stackPushInt(g_fileDescriptor);
@@ -108,11 +126,11 @@ void Gsc_Discord_Connect()
         else
         {
             // Try to re-connect
-            (void)setupAndConnect();
+            setupAndConnect();
         }
     }
 
-    if (g_fileDescriptor == -1)
+    if (g_fileDescriptor == INVALID_SOCK)
     {
         stackPushUndefined();
     }
@@ -125,22 +143,31 @@ void Gsc_Discord_Connect()
 void Gsc_Discord_GetEvent() // Check if there are events from Discord
 {
     char buf[512] = {0};
-    if (g_fileDescriptor != -1)
+    if (g_fileDescriptor == INVALID_SOCK)
     {
-        int result = read(g_fileDescriptor, buf, sizeof(buf));
-        int error = errno;
-        if (result > 0)
-        {
-            //Com_Printf(CON_CHANNEL_SYSTEM, "Discord event '%s' -> game\n", buf);
-            stackPushString(buf);
-            return;
-        }
-        else if ((result == 0) || ((result == -1) && (error != EAGAIN) && (error != EWOULDBLOCK)))
-        {
-            // Read returned EOF or another error
-            // Connection lost. Try to re-connect
-            (void)setupAndConnect();
-        }
+        stackPushUndefined();
+        return;
+    }
+
+    int result = recv(g_fileDescriptor, buf, sizeof(buf), 0);
+    if (result > 0)
+    {
+        //Com_Printf(CON_CHANNEL_SYSTEM, "Discord event '%s' -> game\n", buf);
+        stackPushString(buf);
+        return;
+    }
+
+    if (result == 0 || (result == -1
+        #ifdef __WIN32
+            && WSAGetLastError() != WSAEWOULDBLOCK
+        #else
+            && errno != EAGAIN && errno != EWOULDBLOCK
+        #endif
+        ))
+    {
+        // Read returned EOF or another error
+        // Connection lost. Try to re-connect
+        setupAndConnect();
     }
 
     stackPushUndefined();
@@ -149,7 +176,7 @@ void Gsc_Discord_GetEvent() // Check if there are events from Discord
 void Gsc_Discord_OnEvent() // Push an event to Discord
 {
     // Only process game events if Discord socket is connected
-    if (g_fileDescriptor == -1)
+    if (g_fileDescriptor == INVALID_SOCK)
     {
         return;
     }
@@ -281,17 +308,22 @@ void Gsc_Discord_OnEvent() // Push an event to Discord
     }
 
     // Arriving here means some data is ready to be transmitted
-    int result = write(g_fileDescriptor, txBuf, strlen(txBuf));
-    int error = errno;
+    int result = send(g_fileDescriptor, txBuf, strlen(txBuf), 0);
     if (result > 0)
     {
         //Com_Printf(CON_CHANNEL_SYSTEM, "Game event '%s' -> Discord\n", txBuf);
     }
-    else if ((result == -1) && (error != EAGAIN) && (error != EWOULDBLOCK))
+    else if (result == -1
+        #ifdef __WIN32
+            && WSAGetLastError() != WSAEWOULDBLOCK
+        #else
+            && errno != EAGAIN && errno != EWOULDBLOCK
+        #endif
+        )
     {
         // Write returned an error
         // Connection lost. Try to re-connect
-        (void)setupAndConnect();
+        setupAndConnect();
     }
     else
     {
