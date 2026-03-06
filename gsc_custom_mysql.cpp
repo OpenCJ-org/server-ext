@@ -8,9 +8,14 @@
 #include "gsc_custom_mysql.hpp"
 #include "shared.hpp"
 
+#ifdef __WIN32
+#include <mariadb/mysql.h>
+#else
 #include <mysql/mysql.h>
-#include <pthread.h>
-#include <unistd.h>
+#endif
+#include <chrono>
+#include <mutex>
+#include <thread>
 
 #define SQL_MAX_QUERY_SIZE  (10 * 1024)
 
@@ -37,9 +42,9 @@ struct mysql_async_connection
 mysql_async_connection *first_async_connection = NULL;
 mysql_async_task *first_async_task = NULL;
 MYSQL *cod_mysql_connection = NULL;
-pthread_mutex_t lock_async_mysql;
+std::mutex lock_async_mysql;
 
-void *mysql_async_execute_query(void *input_c) //cannot be called from gsc, is threaded.
+void mysql_async_execute_query(void *input_c) //cannot be called from gsc, is threaded.
 {
     mysql_async_connection *c = (mysql_async_connection *) input_c;
     int res = mysql_query(c->connection, c->task->query);
@@ -51,16 +56,14 @@ void *mysql_async_execute_query(void *input_c) //cannot be called from gsc, is t
     }
     c->task->done = true;
     c->task = NULL;
-    return NULL;
 }
 
-void *mysql_async_query_handler(void* input_nothing) //is threaded after initialize
+void mysql_async_query_handler(void* input_nothing) //is threaded after initialize
 {
     static bool started = false;
     if(started)
     {
         Shared_Printf("async handler already started. Returning\n");
-        return NULL;
     }
     started = true;
     mysql_async_connection *c = first_async_connection;
@@ -68,12 +71,11 @@ void *mysql_async_query_handler(void* input_nothing) //is threaded after initial
     {
         Shared_Printf("async handler started before any connection was initialized\n"); //this should never happen
         started = false;
-        return NULL;
     }
     mysql_async_task *q = NULL;
     while(true)
     {
-        pthread_mutex_lock(&lock_async_mysql);
+        lock_async_mysql.lock();
         q = first_async_task;
         c = first_async_connection;
         while(q != NULL)
@@ -92,24 +94,23 @@ void *mysql_async_query_handler(void* input_nothing) //is threaded after initial
                 }
                 q->started = true;
                 c->task = q;
-                pthread_t query_doer;
-                int error = pthread_create(&query_doer, NULL, mysql_async_execute_query, c);
-                if(error)
-                {
-					Shared_Printf("error: %i\n", error);
+
+                try {
+                    std::thread(mysql_async_execute_query, c).detach();
+                } catch (const std::system_error &e) {
+                    Shared_Printf("error: %s\n", e.what());
                     Shared_Printf("Error detaching async handler thread\n");
-                    pthread_mutex_unlock(&lock_async_mysql);
-                    return NULL;
+                    lock_async_mysql.unlock();
+                    return;
                 }
-                pthread_detach(query_doer);
+
                 c = c->next;
             }
             q = q->next;
         }
-        pthread_mutex_unlock(&lock_async_mysql);
-        usleep(10000);
+        lock_async_mysql.unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
-    return NULL;
 }
 
 int mysql_async_query_initializer(char *sql, bool save) //cannot be called from gsc, helper function
@@ -117,7 +118,7 @@ int mysql_async_query_initializer(char *sql, bool save) //cannot be called from 
     static int id = 0;
     id++;
 
-    pthread_mutex_lock(&lock_async_mysql);
+    const std::lock_guard<std::mutex> lock(lock_async_mysql);
 
     mysql_async_task *current = first_async_task;
     while((current != NULL) && (current->next != NULL))
@@ -143,7 +144,6 @@ int mysql_async_query_initializer(char *sql, bool save) //cannot be called from 
         first_async_task = newtask;
     }
 
-    pthread_mutex_unlock(&lock_async_mysql);
     return id;
 }
 
@@ -176,7 +176,7 @@ void gsc_mysql_async_create_query()
 
 void gsc_mysql_async_getdone_list()
 {
-    pthread_mutex_lock(&lock_async_mysql);
+    const std::lock_guard<std::mutex> lock(lock_async_mysql);
     mysql_async_task *current = first_async_task;
 
     stackMakeArray();
@@ -189,7 +189,6 @@ void gsc_mysql_async_getdone_list()
         }
         current = current->next;
     }
-    pthread_mutex_unlock(&lock_async_mysql);
 }
 
 void gsc_mysql_async_getresult_and_free() //same as above, but takes the id of a function instead and returns 0 (not done), undefined (not found) or the mem address of result
@@ -201,7 +200,7 @@ void gsc_mysql_async_getresult_and_free() //same as above, but takes the id of a
 		stackPushUndefined();
 		return;
 	}
-    pthread_mutex_lock(&lock_async_mysql);
+    const std::lock_guard<std::mutex> lock(lock_async_mysql);
     mysql_async_task *c = first_async_task;
     if (c != NULL)
     {
@@ -215,7 +214,6 @@ void gsc_mysql_async_getresult_and_free() //same as above, but takes the id of a
         if(!c->done)
         {
             stackPushUndefined(); //not done yet
-            pthread_mutex_unlock(&lock_async_mysql);
             return;
         }
         if(c->next != NULL)
@@ -234,14 +232,12 @@ void gsc_mysql_async_getresult_and_free() //same as above, but takes the id of a
             stackPushInt(0);
         }
         delete c;
-        pthread_mutex_unlock(&lock_async_mysql);
         return;
     }
     else
     {
         Shared_Printf("mysql async query id not found\n");
         stackPushUndefined();
-        pthread_mutex_unlock(&lock_async_mysql);
         return;
     }
 }
@@ -251,12 +247,6 @@ void gsc_mysql_async_initializer()//returns array with mysql connection handlers
     if (first_async_connection != NULL)
     {
 		Shared_Printf("gsc_mysql_async_initializer() async mysql already initialized. Returning before adding additional connections\n");
-        stackPushUndefined();
-        return;
-    }
-    if (pthread_mutex_init(&lock_async_mysql, NULL) != 0)
-    {
-		Shared_Printf("Async mutex initialization failed\n");
         stackPushUndefined();
         return;
     }
@@ -306,14 +296,12 @@ void gsc_mysql_async_initializer()//returns array with mysql connection handlers
 		stackPushArrayNext();
 	}
 
-	pthread_t async_handler;
-	if (pthread_create(&async_handler, NULL, mysql_async_query_handler, NULL) != 0)
-	{
-		stackError("gsc_mysql_async_initializer() error detaching async handler thread");
-		return;
-	}
-
-	pthread_detach(async_handler);
+    try {
+        std::thread(mysql_async_query_handler, nullptr).detach();
+    } catch (const std::system_error &e) {
+        stackError("gsc_mysql_async_initializer() error detaching async handler thread");
+        return;
+    }
 }
 
 void gsc_mysql_init()
