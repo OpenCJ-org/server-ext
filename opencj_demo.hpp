@@ -41,7 +41,10 @@ void Gsc_Demo_FindSegment();
 void Gsc_Demo_BeginPresentation(int client);
 void Gsc_Demo_ApplyPresentation(int client);
 void Gsc_Demo_EndPresentation(int client);
+void Gsc_Demo_PlayLanding(int client);
 void Gsc_Demo_ReadFrame_Weapon(int client);
 void Gsc_Demo_ReadFrame_RPGSound(int client);
 
 #endif // _OPENCJ_DEMO_HPP_
+
+void Gsc_Demo_SeekCheckpoint(int client);

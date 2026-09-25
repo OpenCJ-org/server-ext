@@ -17,6 +17,7 @@
 #ifdef COD4
 extern "C" {
 #include "../cod4x-server/src/filesystem.h"
+#include "../cod4x-server/src/bg.h"
 }
 #endif
 #ifdef COD4
@@ -48,11 +49,13 @@ struct DemoVisual
     int16_t velocity[3], ladder[3];
     uint16_t sprintElapsed, mantleTimer, mantleYaw;
     uint8_t mantleTransition, mantleFlags;
+    uint8_t landingEvent, landingImpact;
 };
 
 #ifdef COD4
 static playerState_t *demoReturnVisual[MAX_CLIENTS];
 static int demoPresentedWeapon[MAX_CLIENTS];
+static int demoPresentedFrame[MAX_CLIENTS];
 static qboolean demoReturnFrozen[MAX_CLIENTS];
 static_assert(__builtin_offsetof(gclient_t, bFrozen)==0x3080, "CoD4 freeze-controls layout mismatch");
 static const char *demoWeaponName(unsigned weapon)
@@ -86,7 +89,7 @@ static const char *demoFireSound(unsigned weapon)
     return demoFireSounds.emplace(weapon,alias).first->second.c_str();
 }
 static uint16_t demoU16(int value) { return std::max(0, std::min(65535, value)); }
-static DemoVisual captureDemoVisual(const playerState_t &ps, bool rpg)
+static DemoVisual captureDemoVisual(const playerState_t &ps, bool rpg, int previousEventSequence)
 {
     DemoVisual v = {};
     v.valid=true;v.weapon=ps.weapon;v.weaponTime=demoU16(ps.weaponTime);
@@ -102,6 +105,23 @@ static DemoVisual captureDemoVisual(const playerState_t &ps, bool rpg)
     v.mantleTimer=demoU16(ps.mantleState.timer);
     v.mantleYaw=uint16_t(int(ps.mantleState.yaw*65536.0f/360.0f));
     v.mantleTransition=ps.mantleState.transIndex;v.mantleFlags=ps.mantleState.flags;
+    // Only new engine events since the preceding recorded frame. The ring and
+    // sequence wrap at 4 and 256 respectively. Never replay fall damage.
+    int count=std::min(4,(ps.eventSequence-previousEventSequence)&255);
+    for(int i=count;i>0;--i)
+    {
+        int slot=(ps.eventSequence-i)&3,event=ps.events[slot];
+        int impact=ps.eventParms[slot];
+        if(event>=EV_LANDING_PAIN_DEFAULT && event<=EV_LANDING_PAIN_PAINTEDMETAL)
+        {
+            float minimum=Cvar_VariableValue("bg_fallDamageMinHeight");
+            float height=minimum+(Cvar_VariableValue("bg_fallDamageMaxHeight")-minimum)*impact*0.01f;
+            impact=height>12 ? std::min(24,int(4+(height-12)*4/26)) : 0;
+            event-=EV_LANDING_PAIN_DEFAULT-EV_LANDING_DEFAULT;
+        }
+        if(event>=EV_LANDING_DEFAULT && event<=EV_LANDING_PAINTEDMETAL && impact>0)
+        {v.landingEvent=event;v.landingImpact=std::min(24,impact);}
+    }
     // WEAPON_FIRING is 5. Do not retain ordinary gun/pistol firing animations.
     if(!rpg && ps.weaponstate==5)
     {v.weaponState=0;v.weaponTime=0;v.weaponDelay=0;v.animation=0;}
@@ -139,6 +159,7 @@ typedef struct
     int nrAllocatedFrames;      // Number of currently allocated frames for this demo
     int currentFrame;           // Index of the last frame of this demo (actively updated)
     int lastKeyFrame;           // To remember which demo frame is the current last key frame
+    int captureEventSequence, captureTime, captureTeleportBit;
 } sDemo_t;
 
 typedef struct
@@ -663,7 +684,13 @@ void Gsc_Demo_AddFrame()
         int client;stackGetParamInt(10,&client);
         if(client<0 || client>=MAX_CLIENTS || !g_entities[client].client)
         {stackPushUndefined();return;}
-        frame.visual=captureDemoVisual(*SV_GameClientNum(client),(flags&4096)!=0);
+        const playerState_t &ps=*SV_GameClientNum(client);
+        bool continuous=pDemo->size && ps.commandTime>=pDemo->captureTime && ps.commandTime-pDemo->captureTime<=100;
+        if(continuous && (ps.eFlags&2)!=pDemo->captureTeleportBit)frame.loadNow=true;
+        frame.visual=captureDemoVisual(ps,(flags&4096)!=0,
+            continuous && !frame.loadNow ? pDemo->captureEventSequence : ps.eventSequence);
+        pDemo->captureEventSequence=ps.eventSequence;pDemo->captureTime=ps.commandTime;
+        pDemo->captureTeleportBit=ps.eFlags&2;
     }
 #endif
     if (appendDemoFrame(pDemo, frame)) stackPushInt(demoId);
@@ -913,7 +940,7 @@ void Gsc_Demo_EncodeChunk()
     sDemo_t *demo=findDemoById(id);
     if (!demo || first<0 || count<1 || count>demoChunkFrames || first>demo->size-count)
     { stackPushUndefined(); return; }
-    unsigned char raw[demoChunkBufferSize] = {'O','C','J','2'};
+    unsigned char raw[demoChunkBufferSize] = {'O','C','J','3'};
     size_t used=8;uint16_t previousWeapon=0;bool haveWeapon=false;
     putDemoInt(raw+4,count,4);
     for (int i=0; i<count; ++i)
@@ -946,6 +973,8 @@ void Gsc_Demo_EncodeChunk()
             if(length>63 || used+1+length>sizeof(raw)){stackPushUndefined();return;}
             raw[used++]=length;memcpy(raw+used,name,length);used+=length;
             previousWeapon=v.weapon;haveWeapon=true;
+            if(v.landingEvent)
+            {p[26]|=16;raw[used++]=v.landingEvent;raw[used++]=v.landingImpact;}
         }
 #endif
     }
@@ -981,10 +1010,10 @@ void Gsc_Demo_DecodeChunk()
         packed[i/2]=(a<<4)|b;
     }
     uLongf size=sizeof(raw);
-    if(uncompress(raw,&size,packed,length/2)!=Z_OK || size<8 || (memcmp(raw,"OCJ1",4) && memcmp(raw,"OCJ2",4)))
+    if(uncompress(raw,&size,packed,length/2)!=Z_OK || size<8 || (memcmp(raw,"OCJ1",4) && memcmp(raw,"OCJ2",4) && memcmp(raw,"OCJ3",4)))
     {stackPushUndefined();return;}
     uint32_t count=getDemoInt(raw+4,4);
-    bool modern=raw[3]=='2';size_t used=8;uint16_t weapon=0;bool haveWeapon=false;
+    bool modern=raw[3]!='1';size_t used=8;uint16_t weapon=0;bool haveWeapon=false;
     if(!count || count>demoChunkFrames || (!modern && size!=8+count*demoWireFrameSize))
     {stackPushUndefined();return;}
     sDemoFrame_t frames[demoChunkFrames] = {};
@@ -1026,6 +1055,13 @@ void Gsc_Demo_DecodeChunk()
             }
 #endif
             used+=length;v.weapon=weapon;
+            if(raw[3]=='3' && (p[26]&16))
+            {
+                if(used+2>size){stackPushUndefined();return;}
+                v.landingEvent=raw[used++];v.landingImpact=raw[used++];
+                if(v.landingEvent<77 || v.landingEvent>105 || !v.landingImpact || v.landingImpact>24)
+                {stackPushUndefined();return;}
+            }
         }
     }
     if(used!=size){stackPushUndefined();return;}
@@ -1109,6 +1145,7 @@ void Gsc_Demo_BeginPresentation(int client)
     delete demoReturnVisual[client];
     demoReturnVisual[client]=new(std::nothrow) playerState_t(*SV_GameClientNum(client));
     demoPresentedWeapon[client]=-1;
+    demoPresentedFrame[client]=-1;
     demoReturnFrozen[client]=g_entities[client].client->bFrozen;
     stackPushBool(demoReturnVisual[client]!=nullptr);
 #else
@@ -1127,6 +1164,26 @@ void Gsc_Demo_ApplyPresentation(int client)
     if(!v.valid){stackPushBool(false);return;}
     playerState_t &ps=*SV_GameClientNum(client);
     if(v.weapon>=128){stackPushBool(false);return;}
+    if(demoPresentedFrame[client]!=play.selectedFrame)
+    {
+        bool cut=frame.loadNow;
+        int previous=demoPresentedFrame[client];
+        if(previous>=0 && previous<play.pDemo->size)
+        {
+            const sDemoFrame_t &before=play.pDemo->pDemoFrames[previous];
+            float distance=0,speed=0;
+            for(int i=0;i<3;++i)
+            {
+                float delta=frame.origin[i]-before.origin[i];distance+=delta*delta;
+                float velocity=v.velocity[i]/4.0f;speed+=velocity*velocity;
+            }
+            // Older recordings lack teleport markers. Do not blend map portals
+            // across the map; allow for genuine high-speed movement.
+            cut |= distance>std::max(256.0f*256.0f,speed*0.01f);
+        }
+        if(cut)ps.eFlags ^= 2; // EF_TELEPORT_BIT: discard interpolation across a cut.
+        demoPresentedFrame[client]=play.selectedFrame;
+    }
     // Match the existing seamless-switch protocol so client prediction does not
     // keep re-equipping the viewer's own weapon. Restore inventory on exit.
     if(v.weapon)ps.weapons[v.weapon/32] |= 1u << (v.weapon%32);
@@ -1141,6 +1198,9 @@ void Gsc_Demo_ApplyPresentation(int client)
     // a delayed RPG shot could otherwise spawn a real missile.
     g_entities[client].client->bFrozen=qtrue;
     ps.pm_flags |= 0x800;
+    // Use the client's spectator interpolation path. Local prediction would
+    // zero velocity for frozen controls, suppressing recorded weapon bob/sway.
+    ps.otherFlags |= 2;
     ps.weapFlags &= ~0x80;
     ps.weapon=v.weapon;ps.weaponTime=1000;ps.weaponDelay=0;
     ps.weapAnim=v.animation;ps.weaponstate=0;ps.bobCycle=v.bobCycle;
@@ -1161,6 +1221,55 @@ void Gsc_Demo_ApplyPresentation(int client)
 #endif
 }
 
+// Find checkpoint boundaries in the retained recording, not the map's route graph.
+void Gsc_Demo_SeekCheckpoint(int client)
+{
+    if(Base_Gsc_IsValidClientNum(client))return;
+    int direction;
+    if(!stackGetParamInt(0,&direction) || (direction!=-1 && direction!=1))
+    {stackPushUndefined();return;}
+    const sDemoPlayback_t &play=opencj_playback[client];
+    if(!play.pDemo){stackPushUndefined();return;}
+    int current=play.selectedFrame,target=current;
+    const sDemoFrame_t *frames=play.pDemo->pDemoFrames;
+    if(direction>0)
+    {
+        while(target+1<play.pDemo->size && frames[target+1].checkpointId==frames[current].checkpointId)++target;
+        if(target+1<play.pDemo->size)++target;
+    }
+    else
+    {
+        while(target>0 && frames[target-1].checkpointId==frames[current].checkpointId)--target;
+        if(target>0)
+        {
+            --target;
+            while(target>0 && frames[target-1].checkpointId==frames[target].checkpointId)--target;
+        }
+    }
+    stackPushInt(target);
+}
+
+void Gsc_Demo_PlayLanding(int client)
+{
+#ifdef COD4
+    if(Base_Gsc_IsValidClientNum(client))return;
+    const sDemoPlayback_t &play=opencj_playback[client];
+    if(demoReturnVisual[client] && play.pDemo)
+    {
+        const sDemoFrame_t &frame=play.pDemo->pDemoFrames[play.selectedFrame];
+        if(frame.visual.landingEvent && !frame.loadNow)
+        {
+            // A normal landing event gives the owner the original camera dip;
+            // pain events were converted during capture and cannot deal damage.
+            BG_AddPredictableEventToPlayerstate(BGEvent(frame.visual.landingEvent),
+                frame.visual.landingImpact,g_entities[client].client);
+            stackPushBool(true);return;
+        }
+    }
+#endif
+    stackPushBool(false);
+}
+
 void Gsc_Demo_EndPresentation(int client)
 {
 #ifdef COD4
@@ -1168,6 +1277,7 @@ void Gsc_Demo_EndPresentation(int client)
     playerState_t *saved=demoReturnVisual[client];if(!saved)return;
     playerState_t &ps=*SV_GameClientNum(client);
     g_entities[client].client->bFrozen=demoReturnFrozen[client];
+    ps.otherFlags=(ps.otherFlags&~2)|(saved->otherFlags&2);
     ps.pm_flags=(ps.pm_flags&~0x800)|(saved->pm_flags&0x800);
     ps.weapFlags=(ps.weapFlags&~0x80)|(saved->weapFlags&0x80);
     memcpy(ps.weapons,saved->weapons,sizeof(ps.weapons));
