@@ -66,4 +66,11 @@
 
 
 
+
+{"demoBeginPresentation", Gsc_Demo_BeginPresentation, 0},
+{"demoApplyPresentation", Gsc_Demo_ApplyPresentation, 0},
+{"demoEndPresentation", Gsc_Demo_EndPresentation, 0},
+{"readPlaybackFrame_weapon", Gsc_Demo_ReadFrame_Weapon, 0},
+{"readPlaybackFrame_rpgSound", Gsc_Demo_ReadFrame_RPGSound, 0},
+
 #endif // __METHODS_HPP_

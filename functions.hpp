@@ -55,4 +55,10 @@
 {"sv_getconfigstring", Gsc_SV_GetConfigString, 0},
 {"constructMessage", Gsc_Utils_constructMessage, 0},
 
+
+{"demoEncodeChunk", Gsc_Demo_EncodeChunk, 0},
+{"demoDecodeChunk", Gsc_Demo_DecodeChunk, 0},
+{"demoTruncate", Gsc_Demo_Truncate, 0},
+{"demoFindSegment", Gsc_Demo_FindSegment, 0},
+
 #endif // __FUNCTIONS_HPP_

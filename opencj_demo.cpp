@@ -10,31 +10,24 @@
 
 #include <cstring>
 #include <map>
+#include <new>
+#include <cmath>
+#include <algorithm>
+#include <string>
+#ifdef COD4
+extern "C" {
+#include "../cod4x-server/src/filesystem.h"
+}
+#endif
+#ifdef COD4
+#include "../cod4x-server/src/zlib/zlib.h"
+#else
+#include <zlib.h>
+#endif
 
 /**************************************************************************
  * Defines                                                                *
  **************************************************************************/
-
-// Useful time constants
-#define SECOND  1UL
-#define MINUTE  (SECOND * 60)
-#define HOUR    (MINUTE * 60)
-
-// We can hard define this because no other value may be used for CJ
-#define SERVER_FRAMES_PER_SECOND        20
-
-// In seconds. Initially, a player is allocated this amount of time worth of demo frames.
-// This is re-allocated upon more than half being used
-#define INITIAL_DEMO_TIME_ALLOCATION    (1 * HOUR)
-// Calculate the number of initial demos frames to be allocated based on the above specified duration and server fps
-#define INITIAL_DEMO_FRAME_ALLOCATION   (INITIAL_DEMO_TIME_ALLOCATION * SERVER_FRAMES_PER_SECOND)
-// How many extra frames a demo should get on re-allocation
-// Example: initially a demo gets to be up to 1 hour, but if more than half of that is used, then it is extended by 1 hour up to 2 hours
-//#define BLOCK_DEMO_FRAME_ALLOCATION     INITIAL_DEMO_FRAME_ALLOCATION
-
-// Max demos a player can record during a session. For example different runs in the same session.
-// Keep this semi-low, because each demo gets a decent chunk of allocated memory based on constants above
-//#define MAX_NR_DEMOS_PER_PLAYER         10
 
 // Max number of demos per map that are available for playback
 #define MAX_NR_DEMOS_PER_MAP            128
@@ -46,11 +39,83 @@
  * Types                                                                  *
  **************************************************************************/
 
+struct DemoVisual
+{
+    bool valid;
+    uint16_t weapon, weaponTime, weaponDelay, animation;
+    uint8_t weaponState, bobCycle;
+    float viewHeight, ads;
+    int16_t velocity[3], ladder[3];
+    uint16_t sprintElapsed, mantleTimer, mantleYaw;
+    uint8_t mantleTransition, mantleFlags;
+};
+
+#ifdef COD4
+static playerState_t *demoReturnVisual[MAX_CLIENTS];
+static int demoPresentedWeapon[MAX_CLIENTS];
+static qboolean demoReturnFrozen[MAX_CLIENTS];
+static_assert(__builtin_offsetof(gclient_t, bFrozen)==0x3080, "CoD4 freeze-controls layout mismatch");
+static const char *demoWeaponName(unsigned weapon)
+{
+    if(!weapon)return "none";
+    const WeaponDef *def=BG_GetWeaponDef(weapon);
+    return def ? def->szInternalName : "none";
+}
+static std::map<unsigned,std::string> demoFireSounds;
+static const char *demoFireSound(unsigned weapon)
+{
+    auto found=demoFireSounds.find(weapon);
+    if(found!=demoFireSounds.end())return found->second.c_str();
+    // Dedicated-server weapon defs omit sound assets; use the same weapon file
+    // that supplied the gameplay definition. Cache once per weapon/map.
+    std::string alias;
+    std::string path="weapons/mp/";path+=demoWeaponName(weapon);
+    void *buffer=nullptr;int length=FS_ReadFile(path.c_str(),&buffer);
+    if(length>0 && buffer)
+    {
+        std::string data(static_cast<char *>(buffer),length);
+        const std::string key="\\fireSoundPlayer\\";
+        size_t begin=data.find(key);
+        if(begin!=std::string::npos)
+        {
+            begin+=key.size();size_t end=data.find('\\',begin);
+            if(end!=std::string::npos && end-begin<128)alias=data.substr(begin,end-begin);
+        }
+    }
+    if(buffer)FS_FreeFile(buffer);
+    return demoFireSounds.emplace(weapon,alias).first->second.c_str();
+}
+static uint16_t demoU16(int value) { return std::max(0, std::min(65535, value)); }
+static DemoVisual captureDemoVisual(const playerState_t &ps, bool rpg)
+{
+    DemoVisual v = {};
+    v.valid=true;v.weapon=ps.weapon;v.weaponTime=demoU16(ps.weaponTime);
+    v.weaponDelay=demoU16(ps.weaponDelay);v.animation=ps.weapAnim;
+    v.weaponState=ps.weaponstate;v.bobCycle=ps.bobCycle;
+    v.viewHeight=ps.viewHeightCurrent;v.ads=ps.fWeaponPosFrac;
+    for(int i=0;i<3;++i)
+    {
+        v.velocity[i]=std::max(-32767,std::min(32767,int(ps.velocity[i]*4)));
+        v.ladder[i]=std::max(-32767,std::min(32767,int(ps.vLadderVec[i]*32767)));
+    }
+    v.sprintElapsed=demoU16(ps.commandTime-ps.sprintState.lastSprintStart);
+    v.mantleTimer=demoU16(ps.mantleState.timer);
+    v.mantleYaw=uint16_t(int(ps.mantleState.yaw*65536.0f/360.0f));
+    v.mantleTransition=ps.mantleState.transIndex;v.mantleFlags=ps.mantleState.flags;
+    // WEAPON_FIRING is 5. Do not retain ordinary gun/pistol firing animations.
+    if(!rpg && ps.weaponstate==5)
+    {v.weaponState=0;v.weaponTime=0;v.weaponDelay=0;v.animation=0;}
+    return v;
+}
+#endif
+
 typedef struct
 {
+    DemoVisual visual;
     float origin[3];    // Origin of the player at this frame
     float angles[3];    // Angles of the player at this frame
     short flags;		// flags that store button/stance/weapon stuff
+    int checkpointId;
     short fps; 			// fps
     bool saveNow;		// if this was a frame on which the player saved
     bool loadNow;		// if this was a frame on which the player loaded
@@ -136,6 +201,11 @@ static void clearDemoById(int demoId)
             pDemo->pDemoFrames = nullptr;
         }
 
+        for (int i = 0; i < MAX_CLIENTS; ++i)
+        {
+            if (opencj_playback[i].pDemo == pDemo)
+                memset(&opencj_playback[i], 0, sizeof(opencj_playback[i]));
+        }
         memset(pDemo, 0, sizeof(*pDemo));
     }
 }
@@ -143,6 +213,10 @@ static void clearDemoById(int demoId)
 static void clearAllDemos()
 {
     printf("Clearing all demos\n");
+#ifdef COD4
+    for(int i=0;i<MAX_CLIENTS;++i){delete demoReturnVisual[i];demoReturnVisual[i]=nullptr;}
+    demoFireSounds.clear();
+#endif
     for (int i = 0; i < (int)(sizeof(opencj_demos) / sizeof(opencj_demos[0])); i++)
     {
         clearDemoById(opencj_demos[i].id);
@@ -179,11 +253,52 @@ static sDemo_t *createDemo(int demoId)
         pDemo->magic = DEMO_MAGIC_NUMBER;
         pDemo->id = demoId;
 
-        pDemo->pDemoFrames = new sDemoFrame_t[INITIAL_DEMO_FRAME_ALLOCATION];
-        memset(pDemo->pDemoFrames, 0, INITIAL_DEMO_FRAME_ALLOCATION);
+        pDemo->nrAllocatedFrames = 1024;
+        pDemo->pDemoFrames = new (std::nothrow) sDemoFrame_t[pDemo->nrAllocatedFrames]();
+        if (!pDemo->pDemoFrames)
+        {
+            clearDemoById(demoId);
+            return NULL;
+        }
     }
 
     return pDemo;
+}
+
+// Bound process-wide playback/recording memory on the 32-bit server.
+static const size_t demoMemoryLimit = 128 * 1024 * 1024;
+static bool appendDemoFrame(sDemo_t *demo, const sDemoFrame_t &frame)
+{
+    if (demo->isComplete) return false;
+    if (demo->size == demo->nrAllocatedFrames)
+    {
+        const int capacity = demo->nrAllocatedFrames * 2;
+        size_t allocated = 0;
+        for (int i = 0; i < MAX_NR_DEMOS_PER_MAP; ++i)
+            allocated += opencj_demos[i].nrAllocatedFrames * sizeof(sDemoFrame_t);
+        if (allocated + capacity * sizeof(sDemoFrame_t) > demoMemoryLimit) return false;
+        sDemoFrame_t *frames = new (std::nothrow) sDemoFrame_t[capacity]();
+        if (!frames) return false;
+        memcpy(frames, demo->pDemoFrames, demo->size * sizeof(*frames));
+        delete[] demo->pDemoFrames;
+        demo->pDemoFrames = frames;
+        demo->nrAllocatedFrames = capacity;
+    }
+    const int index = demo->size;
+    sDemoFrame_t &next = demo->pDemoFrames[index];
+    next = frame;
+    next.nextKeyFrame = index;
+    next.prevKeyFrame = index ? demo->lastKeyFrame : 0;
+    if (next.isKeyFrame)
+    {
+        for (int i = demo->lastKeyFrame; i < index; ++i)
+            demo->pDemoFrames[i].nextKeyFrame = index;
+        demo->lastKeyFrame = index;
+    }
+    demo->size++;
+    demo->currentFrame = index;
+    demo->isFirstFrameFilled = true;
+    return true;
 }
 
 /**************************************************************************
@@ -433,8 +548,8 @@ void Gsc_Demo_DestroyDemo()
 
 void Gsc_Demo_AddFrame()
 {
-    const int nrExpectedArgs = 9;
-    if (Scr_GetNumParam() != nrExpectedArgs)
+    const int nrExpectedArgs = Scr_GetNumParam();
+    if (nrExpectedArgs != 9 && nrExpectedArgs != 10 && nrExpectedArgs != 11)
     {
         stackPushUndefined();
         stackError("AddFrame expects 9 arguments: demoId, origin, angles, isKeyFrame, flags, saveNow, loadNow, rpgNow, fps");
@@ -532,71 +647,27 @@ void Gsc_Demo_AddFrame()
         return;
     }
 
-    bool isFirstFrame = !pDemo->isFirstFrameFilled;
-    int idxLastExistingFrame = pDemo->currentFrame;
-    int idxNewFrame = pDemo->currentFrame;
-    if (!isFirstFrame) // First frame might not be filled in yet
+    sDemoFrame_t frame = {};
+    memcpy(frame.origin, origin, sizeof(origin));
+    memcpy(frame.angles, angles, sizeof(angles));
+    frame.isKeyFrame = keyFrame != 0;
+    frame.flags = flags;
+    frame.fps = fps;
+    frame.saveNow = saveNow != 0;
+    frame.loadNow = loadNow != 0;
+    frame.rpgNow = rpgNow != 0;
+    if (nrExpectedArgs >= 10) stackGetParamInt(9, &frame.checkpointId);
+#ifdef COD4
+    if(nrExpectedArgs==11)
     {
-        idxNewFrame++;
+        int client;stackGetParamInt(10,&client);
+        if(client<0 || client>=MAX_CLIENTS || !g_entities[client].client)
+        {stackPushUndefined();return;}
+        frame.visual=captureDemoVisual(*SV_GameClientNum(client),(flags&4096)!=0);
     }
-
-    sDemoFrame_t *pLastExistingFrame = &pDemo->pDemoFrames[idxLastExistingFrame];
-    sDemoFrame_t *pNewFrame = &pDemo->pDemoFrames[idxNewFrame];
-
-    // Fill in new frame
-    memcpy(pNewFrame->origin, origin, sizeof(pNewFrame->origin));
-    memcpy(pNewFrame->angles, angles, sizeof(pNewFrame->angles));
-
-    // Set key frame info for new frame
-    pNewFrame->isKeyFrame = (keyFrame > 0);
-    pNewFrame->saveNow = (saveNow != 0);
-    pNewFrame->loadNow = (loadNow != 0);
-    pNewFrame->rpgNow = (rpgNow != 0);
-    pNewFrame->flags = flags & 0xFFFF;
-    pNewFrame->fps = fps & 0xFFFF;
-    if (isFirstFrame)
-    {
-        pNewFrame->prevKeyFrame = idxLastExistingFrame;
-    }
-    else
-    {
-        if (pLastExistingFrame->isKeyFrame)
-        {
-            pNewFrame->prevKeyFrame = idxLastExistingFrame;
-        }
-        else
-        {
-            pNewFrame->prevKeyFrame = pLastExistingFrame->prevKeyFrame;
-        }
-    }
-
-    // If the new frame is a key frame, update all previous non-key frames to point to this frame
-    if (!isFirstFrame && pNewFrame->isKeyFrame)
-    {
-        for (int i = pDemo->lastKeyFrame; i < idxNewFrame; i++)
-        {
-            sDemoFrame_t *pTmpFrame = &pDemo->pDemoFrames[i];
-            pTmpFrame->nextKeyFrame = idxNewFrame;
-        }
-
-        // Update the last key frame of the demo
-        pDemo->lastKeyFrame = idxNewFrame;
-    }
-    else
-    {
-        pNewFrame->nextKeyFrame = idxNewFrame;
-    }
-
-    // We added 1 frame, so demo size increases by 1
-    pDemo->size++;
-    pDemo->currentFrame++;
-    pDemo->isFirstFrameFilled = true;
-
-    // TODO: key frame branching (player loads)
-    // TODO: re-allocate pDemoFrames if we're over halfway
-
-    //printf("Added frame %d to demo of player %d\n", idxNewFrame, playerId);
-    stackPushInt(demoId);
+#endif
+    if (appendDemoFrame(pDemo, frame)) stackPushInt(demoId);
+    else stackPushUndefined();
 }
 
 void Gsc_Demo_CompleteDemo()
@@ -813,4 +884,335 @@ void Gsc_Demo_ReadFrame_NextKeyFrame(int playerId)
 void Gsc_Demo_ReadFrame_PrevKeyFrame(int playerId)
 {
     Base_Gsc_Demo_FrameSkip(playerId, -1, true);
+}
+
+
+// OCJ1: 27 bytes/frame. OCJ2: optional 31-byte presentation and weapon names
+// only on changes (plus a chunk-start anchor). Both formats use zlib.
+// Hex is only the GSC/SQL transport; MySQL stores UNHEX(payload) as binary.
+static void putDemoInt(unsigned char *p, uint32_t n, int bytes)
+{
+    for (int i=0; i<bytes; ++i) p[i] = (n >> (8*i)) & 255;
+}
+static uint32_t getDemoInt(const unsigned char *p, int bytes)
+{
+    uint32_t n=0;
+    for (int i=0; i<bytes; ++i) n |= uint32_t(p[i]) << (8*i);
+    return n;
+}
+static const int demoChunkFrames = 64;
+static const int demoWireFrameSize = 27;
+static const int demoVisualWireSize = 31;
+static const int demoChunkBufferSize = 8192;
+
+void Gsc_Demo_EncodeChunk()
+{
+    int id, first, count;
+    if (!Base_Gsc_GetValidDemoId(&id, 3)) return;
+    stackGetParamInt(1, &first); stackGetParamInt(2, &count);
+    sDemo_t *demo=findDemoById(id);
+    if (!demo || first<0 || count<1 || count>demoChunkFrames || first>demo->size-count)
+    { stackPushUndefined(); return; }
+    unsigned char raw[demoChunkBufferSize] = {'O','C','J','2'};
+    size_t used=8;uint16_t previousWeapon=0;bool haveWeapon=false;
+    putDemoInt(raw+4,count,4);
+    for (int i=0; i<count; ++i)
+    {
+        const sDemoFrame_t &frame=demo->pDemoFrames[first+i];
+        unsigned char *p=raw+used;used+=demoWireFrameSize;
+        for (int axis=0; axis<3; ++axis)
+        {
+            uint32_t bits; memcpy(&bits,&frame.origin[axis],4);
+            putDemoInt(p+axis*4,bits,4);
+            putDemoInt(p+12+axis*2,uint16_t(int(frame.angles[axis]*65536.0f/360.0f)),2);
+        }
+        putDemoInt(p+18,uint16_t(frame.flags),2);
+        putDemoInt(p+20,uint16_t(frame.fps),2);
+        putDemoInt(p+22,frame.checkpointId,4);
+        p[26]=(frame.saveNow?1:0)|(frame.loadNow?2:0)|(frame.rpgNow?4:0);
+#ifdef COD4
+        if(frame.visual.valid)
+        {
+            p[26]|=8;
+            const DemoVisual &v=frame.visual;unsigned char *q=raw+used;used+=demoVisualWireSize;
+            putDemoInt(q,v.weaponTime,2);putDemoInt(q+2,v.weaponDelay,2);putDemoInt(q+4,v.animation,2);
+            q[6]=v.weaponState;q[7]=v.bobCycle;putDemoInt(q+8,int(v.viewHeight*256),2);
+            q[10]=std::max(0,std::min(255,int(std::lround(v.ads*255))));
+            for(int a=0;a<3;++a){putDemoInt(q+11+a*2,uint16_t(v.velocity[a]),2);putDemoInt(q+17+a*2,uint16_t(v.ladder[a]),2);}
+            putDemoInt(q+23,v.sprintElapsed,2);putDemoInt(q+25,v.mantleTimer,2);putDemoInt(q+27,v.mantleYaw,2);
+            q[29]=v.mantleTransition;q[30]=v.mantleFlags;
+            const char *name=(!haveWeapon||previousWeapon!=v.weapon)?demoWeaponName(v.weapon):"";
+            size_t length=strlen(name);
+            if(length>63 || used+1+length>sizeof(raw)){stackPushUndefined();return;}
+            raw[used++]=length;memcpy(raw+used,name,length);used+=length;
+            previousWeapon=v.weapon;haveWeapon=true;
+        }
+#endif
+    }
+    unsigned char packed[demoChunkBufferSize]; uLongf size=sizeof(packed);
+    if (compress2(packed,&size,raw,used,6)!=Z_OK)
+    { stackPushUndefined(); return; }
+    const char *digits="0123456789abcdef";
+    char hex[demoChunkBufferSize*2+1];
+    for (uLongf i=0;i<size;++i) {hex[2*i]=digits[packed[i]>>4];hex[2*i+1]=digits[packed[i]&15];}
+    hex[2*size]=0; stackPushString(hex);
+}
+static int demoHexDigit(char c)
+{
+    if(c>='0'&&c<='9')return c-'0';
+    if(c>='a'&&c<='f')return c-'a'+10;
+    if(c>='A'&&c<='F')return c-'A'+10;
+    return -1;
+}
+void Gsc_Demo_DecodeChunk()
+{
+    int id; const char *hex;
+    if (!Base_Gsc_GetValidDemoId(&id,2)) return;
+    stackGetParamString(1,&hex);
+    sDemo_t *demo=findDemoById(id);
+    size_t length=strlen(hex);
+    if (!demo || demo->isComplete || !length || length>demoChunkBufferSize*2 || length%2)
+    { stackPushUndefined(); return; }
+    unsigned char packed[demoChunkBufferSize],raw[demoChunkBufferSize];
+    for(size_t i=0;i<length;i+=2)
+    {
+        int a=demoHexDigit(hex[i]),b=demoHexDigit(hex[i+1]);
+        if(a<0||b<0){stackPushUndefined();return;}
+        packed[i/2]=(a<<4)|b;
+    }
+    uLongf size=sizeof(raw);
+    if(uncompress(raw,&size,packed,length/2)!=Z_OK || size<8 || (memcmp(raw,"OCJ1",4) && memcmp(raw,"OCJ2",4)))
+    {stackPushUndefined();return;}
+    uint32_t count=getDemoInt(raw+4,4);
+    bool modern=raw[3]=='2';size_t used=8;uint16_t weapon=0;bool haveWeapon=false;
+    if(!count || count>demoChunkFrames || (!modern && size!=8+count*demoWireFrameSize))
+    {stackPushUndefined();return;}
+    sDemoFrame_t frames[demoChunkFrames] = {};
+    for(uint32_t i=0;i<count;++i)
+    {
+        if(used+demoWireFrameSize>size){stackPushUndefined();return;}
+        unsigned char *p=raw+used;used+=demoWireFrameSize;
+        sDemoFrame_t &frame=frames[i];
+        for(int axis=0;axis<3;++axis)
+        {
+            uint32_t bits=getDemoInt(p+axis*4,4);memcpy(&frame.origin[axis],&bits,4);
+            if(!std::isfinite(frame.origin[axis]) || fabs(frame.origin[axis])>131072)
+            {stackPushUndefined();return;}
+            frame.angles[axis]=getDemoInt(p+12+axis*2,2)*360.0f/65536.0f;
+        }
+        frame.flags=getDemoInt(p+18,2);frame.fps=getDemoInt(p+20,2);
+        frame.checkpointId=getDemoInt(p+22,4);
+        frame.saveNow=p[26]&1;frame.loadNow=p[26]&2;frame.rpgNow=p[26]&4;
+        frame.isKeyFrame=true;
+        if(modern && (p[26]&8))
+        {
+            if(used+demoVisualWireSize+1>size){stackPushUndefined();return;}
+            unsigned char *q=raw+used;used+=demoVisualWireSize;
+            DemoVisual &v=frame.visual;v.valid=true;
+            v.weaponTime=getDemoInt(q,2);v.weaponDelay=getDemoInt(q+2,2);v.animation=getDemoInt(q+4,2);
+            v.weaponState=q[6];v.bobCycle=q[7];v.viewHeight=int16_t(getDemoInt(q+8,2))/256.0f;v.ads=q[10]/255.0f;
+            for(int a=0;a<3;++a){v.velocity[a]=getDemoInt(q+11+a*2,2);v.ladder[a]=getDemoInt(q+17+a*2,2);}
+            v.sprintElapsed=getDemoInt(q+23,2);v.mantleTimer=getDemoInt(q+25,2);v.mantleYaw=getDemoInt(q+27,2);
+            v.mantleTransition=q[29];v.mantleFlags=q[30];
+            unsigned length=raw[used++];
+            if(length>63 || used+length>size || (!length&&!haveWeapon) || v.viewHeight<0 || v.viewHeight>100 || v.weaponState>32)
+            {stackPushUndefined();return;}
+#ifdef COD4
+            if(length)
+            {
+                char name[64];memcpy(name,raw+used,length);name[length]=0;
+                if(strlen(name)!=length){stackPushUndefined();return;}
+                weapon=!strcmp(name,"none")?0:G_GetWeaponIndexForName(name);haveWeapon=true;
+            }
+#endif
+            used+=length;v.weapon=weapon;
+        }
+    }
+    if(used!=size){stackPushUndefined();return;}
+    for(uint32_t i=0;i<count;++i)
+        if(!appendDemoFrame(demo,frames[i])) {stackPushUndefined();return;}
+    stackPushInt(count);
+}
+void Gsc_Demo_Truncate()
+{
+    int id,count;
+    if(!Base_Gsc_GetValidDemoId(&id,2))return;
+    stackGetParamInt(1,&count);
+    sDemo_t *demo=findDemoById(id);
+    if(!demo || demo->isComplete || count<0 || count>demo->size)
+    {stackPushUndefined();return;}
+    demo->size=count;demo->currentFrame=count?count-1:0;
+    demo->isFirstFrameFilled=count!=0;demo->lastKeyFrame=0;
+    for(int i=0;i<count;++i)
+    {
+        sDemoFrame_t &f=demo->pDemoFrames[i];
+        f.isKeyFrame=true;f.prevKeyFrame=i?i-1:0;f.nextKeyFrame=i+1<count?i+1:i;
+        demo->lastKeyFrame=i;
+    }
+    stackPushInt(count);
+}
+void Gsc_Demo_FindSegment()
+{
+    int id,cp,any;vec3_t origin;
+    if(!Base_Gsc_GetValidDemoId(&id,4))return;
+    stackGetParamInt(1,&cp);stackGetParamVector(2,origin);stackGetParamInt(3,&any);
+    sDemo_t *demo=findDemoById(id);
+    if(!demo || demo->size<2){stackPushUndefined();return;}
+    int first=-1,last=-1;
+    float nearest=256.0f*256.0f;
+    if(!any)
+    {
+        for(int i=0;i<demo->size;++i)
+        {
+            if(demo->pDemoFrames[i].checkpointId==cp)
+            {
+                if(first<0)first=i;
+                last=i;
+            }
+            else if(first>=0){last=i;break;}
+        }
+        // Alternative platforms are only suitable if their setup is nearby.
+        if(first>=0)
+        {
+            float d=0;for(int a=0;a<3;++a){float x=demo->pDemoFrames[first].origin[a]-origin[a];d+=x*x;}
+            if(d>nearest)first=-1;
+        }
+    }
+    else
+    {
+        int begin=0,grounded=0;bool airborne=false;
+        float distance=nearest;
+        for(int i=0;i<demo->size;++i)
+        {
+            const sDemoFrame_t &f=demo->pDemoFrames[i];
+            float d=0;for(int a=0;a<3;++a){float x=f.origin[a]-origin[a];d+=x*x;}
+            if(d<distance)distance=d;
+            if(f.flags&8192)++grounded;else {grounded=0;airborne=true;}
+            if((airborne&&grounded>=10)||i==demo->size-1)
+            {
+                if(distance<nearest){first=begin;last=i;nearest=distance;}
+                begin=i;grounded=0;airborne=false;distance=256.0f*256.0f;
+            }
+        }
+        // No nearby passage: play the whole route.
+        if(first<0){first=0;last=demo->size-1;}
+    }
+    if(first<0 || last<=first){stackPushUndefined();return;}
+    stackMakeArray();stackPushInt(first);stackPushArrayNext();stackPushInt(last);stackPushArrayNext();
+}
+
+// Presentation only: never replay input through weapon simulation or spawn missiles.
+void Gsc_Demo_BeginPresentation(int client)
+{
+#ifdef COD4
+    if(Base_Gsc_IsValidClientNum(client))return;
+    delete demoReturnVisual[client];
+    demoReturnVisual[client]=new(std::nothrow) playerState_t(*SV_GameClientNum(client));
+    demoPresentedWeapon[client]=-1;
+    demoReturnFrozen[client]=g_entities[client].client->bFrozen;
+    stackPushBool(demoReturnVisual[client]!=nullptr);
+#else
+    stackPushBool(false);
+#endif
+}
+
+void Gsc_Demo_ApplyPresentation(int client)
+{
+#ifdef COD4
+    if(Base_Gsc_IsValidClientNum(client))return;
+    sDemoPlayback_t &play=opencj_playback[client];
+    if(!demoReturnVisual[client] || !play.pDemo){stackPushBool(false);return;}
+    const sDemoFrame_t &frame=play.pDemo->pDemoFrames[play.selectedFrame];
+    const DemoVisual &v=frame.visual;
+    if(!v.valid){stackPushBool(false);return;}
+    playerState_t &ps=*SV_GameClientNum(client);
+    if(v.weapon>=128){stackPushBool(false);return;}
+    // Match the existing seamless-switch protocol so client prediction does not
+    // keep re-equipping the viewer's own weapon. Restore inventory on exit.
+    if(v.weapon)ps.weapons[v.weapon/32] |= 1u << (v.weapon%32);
+    if(demoPresentedWeapon[client]!=v.weapon)
+    {
+        SV_GameSendServerCommand(client,1,va("a %u",unsigned(v.weapon)));
+        demoPresentedWeapon[client]=v.weapon;
+    }
+    // disableWeapons makes PM_Weapon lower the weapon to "none". Freeze
+    // live input instead, and drive the animation directly from the recording.
+    // Never feed recorded fire delays/states back into weapon simulation:
+    // a delayed RPG shot could otherwise spawn a real missile.
+    g_entities[client].client->bFrozen=qtrue;
+    ps.pm_flags |= 0x800;
+    ps.weapFlags &= ~0x80;
+    ps.weapon=v.weapon;ps.weaponTime=1000;ps.weaponDelay=0;
+    ps.weapAnim=v.animation;ps.weaponstate=0;ps.bobCycle=v.bobCycle;
+    ps.viewHeightCurrent=v.viewHeight;ps.viewHeightTarget=int(v.viewHeight);ps.viewHeightLerpTime=0;
+    ps.fWeaponPosFrac=v.ads;
+    if(!(frame.flags&8192) && ps.groundEntityNum!=ENTITYNUM_NONE)
+    {ps.jumpTime=ps.commandTime;ps.jumpOriginZ=frame.origin[2];}
+    ps.groundEntityNum=(frame.flags&8192)?ENTITYNUM_WORLD:ENTITYNUM_NONE;
+    ps.pm_flags=(ps.pm_flags&~12)|((frame.flags&128)?4:0)|((frame.flags&256)?8:0);
+    for(int i=0;i<3;++i){ps.velocity[i]=v.velocity[i]/4.0f;ps.vLadderVec[i]=v.ladder[i]/32767.0f;}
+    ps.sprintState.lastSprintStart=ps.commandTime-v.sprintElapsed;
+    ps.sprintState.lastSprintEnd=(frame.flags&64)?ps.sprintState.lastSprintStart-1:ps.commandTime;
+    ps.mantleState.timer=v.mantleTimer;ps.mantleState.yaw=v.mantleYaw*360.0f/65536;
+    ps.mantleState.transIndex=v.mantleTransition;ps.mantleState.flags=v.mantleFlags;
+    stackPushBool(true);
+#else
+    stackPushBool(false);
+#endif
+}
+
+void Gsc_Demo_EndPresentation(int client)
+{
+#ifdef COD4
+    if(Base_Gsc_IsValidClientNum(client))return;
+    playerState_t *saved=demoReturnVisual[client];if(!saved)return;
+    playerState_t &ps=*SV_GameClientNum(client);
+    g_entities[client].client->bFrozen=demoReturnFrozen[client];
+    ps.pm_flags=(ps.pm_flags&~0x800)|(saved->pm_flags&0x800);
+    ps.weapFlags=(ps.weapFlags&~0x80)|(saved->weapFlags&0x80);
+    memcpy(ps.weapons,saved->weapons,sizeof(ps.weapons));
+    memcpy(ps.weaponold,saved->weaponold,sizeof(ps.weaponold));
+    memcpy(ps.weaponrechamber,saved->weaponrechamber,sizeof(ps.weaponrechamber));
+    memcpy(ps.ammo,saved->ammo,sizeof(ps.ammo));memcpy(ps.ammoclip,saved->ammoclip,sizeof(ps.ammoclip));
+    ps.weapon=saved->weapon;ps.weaponTime=saved->weaponTime;ps.weaponDelay=saved->weaponDelay;
+    SV_GameSendServerCommand(client,1,va("a %u",saved->weapon));
+    ps.weapAnim=saved->weapAnim;ps.weaponstate=saved->weaponstate;ps.bobCycle=saved->bobCycle;
+    ps.viewHeightCurrent=saved->viewHeightCurrent;ps.viewHeightTarget=saved->viewHeightTarget;
+    ps.viewHeightLerpTime=saved->viewHeightLerpTime;ps.viewHeightLerpTarget=saved->viewHeightLerpTarget;ps.viewHeightLerpDown=saved->viewHeightLerpDown;
+    ps.fWeaponPosFrac=saved->fWeaponPosFrac;ps.pm_flags=(ps.pm_flags&~12)|(saved->pm_flags&12);
+    memcpy(ps.velocity,saved->velocity,sizeof(ps.velocity));memcpy(ps.vLadderVec,saved->vLadderVec,sizeof(ps.vLadderVec));
+    int elapsed=ps.commandTime-saved->commandTime;
+    ps.groundEntityNum=saved->groundEntityNum;ps.jumpTime=saved->jumpTime+elapsed;ps.jumpOriginZ=saved->jumpOriginZ;
+    ps.sprintState=saved->sprintState;ps.sprintState.lastSprintStart+=elapsed;ps.sprintState.lastSprintEnd+=elapsed;
+    ps.mantleState=saved->mantleState;
+    delete saved;demoReturnVisual[client]=nullptr;
+#endif
+}
+
+void Gsc_Demo_ReadFrame_Weapon(int client)
+{
+#ifdef COD4
+    if(Base_Gsc_IsValidClientNum(client))return;
+    const sDemoPlayback_t &play=opencj_playback[client];
+    if(play.pDemo){const DemoVisual &v=play.pDemo->pDemoFrames[play.selectedFrame].visual;if(v.valid){stackPushString(demoWeaponName(v.weapon));return;}}
+#endif
+    stackPushUndefined();
+}
+
+void Gsc_Demo_ReadFrame_RPGSound(int client)
+{
+#ifdef COD4
+    if(Base_Gsc_IsValidClientNum(client))return;
+    const sDemoPlayback_t &play=opencj_playback[client];
+    if(play.pDemo)
+    {
+        const sDemoFrame_t &f=play.pDemo->pDemoFrames[play.selectedFrame];
+        if(f.visual.valid && f.rpgNow && (f.flags&4096))
+        {
+            const char *sound=demoFireSound(f.visual.weapon);
+            if(*sound){stackPushString(sound);return;}
+        }
+    }
+#endif
+    stackPushUndefined();
 }

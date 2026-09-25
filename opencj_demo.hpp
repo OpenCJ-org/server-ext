@@ -33,4 +33,15 @@ void Gsc_Demo_ReadFrame_PrevKeyFrame(int playerId);
 void Gsc_Demo_ReadFrame_Flags(int playerId);
 void Gsc_Demo_ReadFrame_FPS(int playerId);
 
+void Gsc_Demo_EncodeChunk();
+void Gsc_Demo_DecodeChunk();
+void Gsc_Demo_Truncate();
+void Gsc_Demo_FindSegment();
+
+void Gsc_Demo_BeginPresentation(int client);
+void Gsc_Demo_ApplyPresentation(int client);
+void Gsc_Demo_EndPresentation(int client);
+void Gsc_Demo_ReadFrame_Weapon(int client);
+void Gsc_Demo_ReadFrame_RPGSound(int client);
+
 #endif // _OPENCJ_DEMO_HPP_
