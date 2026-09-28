@@ -145,12 +145,17 @@ void Gsc_Vis_HideForAll(int toHideId)
 void Gsc_Vis_SetHideRadius(int playerId)
 {
     int radius = 0;
-    if ((Scr_GetNumParam() < 1) || !stackGetParamInt(0, &radius))
+    if (stackGetParams("i", &radius) != 1)
     {
         stackError("Expected 1 argument: radius (int)");
         return;
     }
 
+    if (radius < 0 || radius > 4096)
+    {
+        stackError("Hide radius must be between 0 and 4096");
+        return;
+    }
     opencj_hideCylinder[playerId].radiusSquared = (radius * radius);
     opencj_hideCylinder[playerId].height = (radius * 2);
 }
