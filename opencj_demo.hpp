@@ -48,3 +48,11 @@ void Gsc_Demo_ReadFrame_RPGSound(int client);
 #endif // _OPENCJ_DEMO_HPP_
 
 void Gsc_Demo_SeekCheckpoint(int client);
+
+void Gsc_Demo_MarkFailedSince();
+void Gsc_Demo_PlaybackStyle(int client);
+void Gsc_Demo_PlaybackTime(int client);
+
+void Gsc_Demo_CreateTransient();
+void Gsc_Demo_KeepLast();
+void Gsc_Demo_ClipInfo();

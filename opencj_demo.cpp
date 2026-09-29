@@ -14,6 +14,7 @@
 #include <cmath>
 #include <algorithm>
 #include <string>
+#include <vector>
 #ifdef COD4
 extern "C" {
 #include "../cod4x-server/src/filesystem.h"
@@ -179,6 +180,8 @@ static std::map<uint32_t, uint16_t> opencj_demoIdToIdx;
 
 // A player can only watch 1 demo at a time
 static sDemoPlayback_t opencj_playback[MAX_CLIENTS];
+// Per-viewer edit lists share the original recording; no duplicate DB payloads.
+static std::vector<int> demoPlaybackTimeline[MAX_CLIENTS];
 
 /**************************************************************************
  * Local functions                                                        *
@@ -225,7 +228,10 @@ static void clearDemoById(int demoId)
         for (int i = 0; i < MAX_CLIENTS; ++i)
         {
             if (opencj_playback[i].pDemo == pDemo)
+            {
+                demoPlaybackTimeline[i].clear();
                 memset(&opencj_playback[i], 0, sizeof(opencj_playback[i]));
+            }
         }
         memset(pDemo, 0, sizeof(*pDemo));
     }
@@ -384,7 +390,15 @@ static void Base_Gsc_Demo_FrameSkip(int playerId, int nrToSkip, bool areKeyFrame
     else
     {
         // If we're requested to skip n keyframes, then we need to figure out how many real frames that is
-        if (areKeyFrames)
+        if (areKeyFrames && !demoPlaybackTimeline[playerId].empty())
+        {
+            const auto &timeline=demoPlaybackTimeline[playerId];
+            auto it=std::lower_bound(timeline.begin(),timeline.end(),pPlayback->selectedFrame);
+            int index=int(it-timeline.begin());
+            index=std::max(0,std::min(int(timeline.size())-1,index+nrToSkip));
+            nrToSkip=timeline[index]-pPlayback->selectedFrame;
+        }
+        else if (areKeyFrames)
         {
             if (nrToSkip != 0)
             {
@@ -730,6 +744,7 @@ void Gsc_Demo_SelectPlaybackDemo(int playerId)
     // Clear the player's current playback state
     sDemoPlayback_t *pPlayback = &opencj_playback[playerId];
     pPlayback->selectedFrame = 0;
+    demoPlaybackTimeline[playerId].clear();
     pPlayback->pDemo = findDemoById(demoId);
     if (!pPlayback->pDemo)
     {
@@ -914,6 +929,7 @@ void Gsc_Demo_ReadFrame_PrevKeyFrame(int playerId)
 }
 
 
+// OCJ4 adds a failed-path flag; OCJ1-3 remain readable. No extra bytes/frame.
 // OCJ1: 27 bytes/frame. OCJ2: optional 31-byte presentation and weapon names
 // only on changes (plus a chunk-start anchor). Both formats use zlib.
 // Hex is only the GSC/SQL transport; MySQL stores UNHEX(payload) as binary.
@@ -940,7 +956,7 @@ void Gsc_Demo_EncodeChunk()
     sDemo_t *demo=findDemoById(id);
     if (!demo || first<0 || count<1 || count>demoChunkFrames || first>demo->size-count)
     { stackPushUndefined(); return; }
-    unsigned char raw[demoChunkBufferSize] = {'O','C','J','3'};
+    unsigned char raw[demoChunkBufferSize] = {'O','C','J','4'};
     size_t used=8;uint16_t previousWeapon=0;bool haveWeapon=false;
     putDemoInt(raw+4,count,4);
     for (int i=0; i<count; ++i)
@@ -956,7 +972,7 @@ void Gsc_Demo_EncodeChunk()
         putDemoInt(p+18,uint16_t(frame.flags),2);
         putDemoInt(p+20,uint16_t(frame.fps),2);
         putDemoInt(p+22,frame.checkpointId,4);
-        p[26]=(frame.saveNow?1:0)|(frame.loadNow?2:0)|(frame.rpgNow?4:0);
+        p[26]=(frame.saveNow?1:0)|(frame.loadNow?2:0)|(frame.rpgNow?4:0)|(frame.isKeyFrame?0:32);
 #ifdef COD4
         if(frame.visual.valid)
         {
@@ -1010,7 +1026,7 @@ void Gsc_Demo_DecodeChunk()
         packed[i/2]=(a<<4)|b;
     }
     uLongf size=sizeof(raw);
-    if(uncompress(raw,&size,packed,length/2)!=Z_OK || size<8 || (memcmp(raw,"OCJ1",4) && memcmp(raw,"OCJ2",4) && memcmp(raw,"OCJ3",4)))
+    if(uncompress(raw,&size,packed,length/2)!=Z_OK || size<8 || (memcmp(raw,"OCJ1",4) && memcmp(raw,"OCJ2",4) && memcmp(raw,"OCJ3",4) && memcmp(raw,"OCJ4",4)))
     {stackPushUndefined();return;}
     uint32_t count=getDemoInt(raw+4,4);
     bool modern=raw[3]!='1';size_t used=8;uint16_t weapon=0;bool haveWeapon=false;
@@ -1032,7 +1048,7 @@ void Gsc_Demo_DecodeChunk()
         frame.flags=getDemoInt(p+18,2);frame.fps=getDemoInt(p+20,2);
         frame.checkpointId=getDemoInt(p+22,4);
         frame.saveNow=p[26]&1;frame.loadNow=p[26]&2;frame.rpgNow=p[26]&4;
-        frame.isKeyFrame=true;
+        frame.isKeyFrame=raw[3]!='4' || !(p[26]&32);
         if(modern && (p[26]&8))
         {
             if(used+demoVisualWireSize+1>size){stackPushUndefined();return;}
@@ -1055,7 +1071,7 @@ void Gsc_Demo_DecodeChunk()
             }
 #endif
             used+=length;v.weapon=weapon;
-            if(raw[3]=='3' && (p[26]&16))
+            if(raw[3]>='3' && (p[26]&16))
             {
                 if(used+2>size){stackPushUndefined();return;}
                 v.landingEvent=raw[used++];v.landingImpact=raw[used++];
@@ -1069,6 +1085,89 @@ void Gsc_Demo_DecodeChunk()
         if(!appendDemoFrame(demo,frames[i])) {stackPushUndefined();return;}
     stackPushInt(count);
 }
+void Gsc_Demo_MarkFailedSince()
+{
+    int id,count;
+    if(!Base_Gsc_GetValidDemoId(&id,2))return;
+    stackGetParamInt(1,&count);
+    sDemo_t *demo=findDemoById(id);
+    if(!demo || demo->isComplete || count<0 || count>demo->size)
+    {stackPushUndefined();return;}
+    for(int i=count;i<demo->size;++i)demo->pDemoFrames[i].isKeyFrame=false;
+    int last=count?count-1:0;
+    while(last>0 && !demo->pDemoFrames[last].isKeyFrame)--last;
+    demo->lastKeyFrame=last;
+    for(int i=last;i<demo->size;++i)
+    {
+        demo->pDemoFrames[i].nextKeyFrame=i;
+        if(i>last)demo->pDemoFrames[i].prevKeyFrame=last;
+    }
+    stackPushInt(demo->size);
+}
+
+// 0: complete speedrun/leaderboard; 1: successful low-RPG path;
+// 2: successful walkthrough with a short approach and landing at each checkpoint.
+void Gsc_Demo_PlaybackStyle(int client)
+{
+    if(Base_Gsc_IsValidClientNum(client))return;
+    int style,begin,end;
+    if(!stackGetParams("iii",&style,&begin,&end))return;
+    const sDemo_t *demo=opencj_playback[client].pDemo;
+    if(!demo || style<0 || style>2 || begin<0 || end>=demo->size || begin>end)
+    {stackPushUndefined();return;}
+    auto &timeline=demoPlaybackTimeline[client];
+    timeline.clear();
+    for(int i=0;i<demo->size;++i)
+        if(style==0 || demo->pDemoFrames[i].isKeyFrame)timeline.push_back(i);
+    if(style==2)
+    {
+        std::vector<int> edited;
+        for(size_t first=0;first<timeline.size();)
+        {
+            size_t last=first+1;
+            int cp=demo->pDemoFrames[timeline[first]].checkpointId;
+            while(last<timeline.size() && demo->pDemoFrames[timeline[last]].checkpointId==cp)++last;
+            // Work backwards from the final airborne chain. Short ground
+            // contacts stay in the chain so bunny hops are never split apart.
+            size_t takeoff=last;
+            int ground=0;bool airborne=false;
+            for(size_t i=last;i>first;)
+            {
+                --i;
+                const auto &f=demo->pDemoFrames[timeline[i]];
+                if(!(f.flags&8192))
+                {airborne=true;ground=0;takeoff=i;}
+                else if(airborne && ++ground>=10)break;
+            }
+            size_t approach=airborne ? (takeoff>first+20?takeoff-20:first)
+                                     : (last>first+40?last-40:first);
+            for(size_t i=first;i<last;++i)
+                if(i<first+10 || i>=approach)edited.push_back(timeline[i]);
+            first=last;
+        }
+        timeline.swap(edited);
+    }
+    auto a=std::lower_bound(timeline.begin(),timeline.end(),begin);
+    auto b=std::upper_bound(timeline.begin(),timeline.end(),end);
+    if(a==b){stackPushUndefined();return;}
+    opencj_playback[client].selectedFrame=*a;
+    stackMakeArray();stackPushInt(*a);stackPushArrayNext();stackPushInt(*(b-1));stackPushArrayNext();
+}
+
+void Gsc_Demo_PlaybackTime(int client)
+{
+    if(Base_Gsc_IsValidClientNum(client))return;
+    int begin,end;
+    if(!stackGetParams("ii",&begin,&end))return;
+    const auto &timeline=demoPlaybackTimeline[client];
+    int frame=opencj_playback[client].selectedFrame;
+    if(timeline.empty()){stackPushUndefined();return;}
+    auto a=std::lower_bound(timeline.begin(),timeline.end(),begin);
+    auto b=std::upper_bound(timeline.begin(),timeline.end(),end);
+    auto c=std::lower_bound(a,b,frame);
+    stackMakeArray();stackPushInt(int(c-a));stackPushArrayNext();stackPushInt(std::max(0,int(b-a)-1));stackPushArrayNext();
+}
+
 void Gsc_Demo_Truncate()
 {
     int id,count;
@@ -1090,16 +1189,21 @@ void Gsc_Demo_Truncate()
 void Gsc_Demo_FindSegment()
 {
     int id,cp,any;vec3_t origin;
-    if(!Base_Gsc_GetValidDemoId(&id,4))return;
+    int args=Scr_GetNumParam();
+    if(args!=4 && args!=5){stackPushUndefined();return;}
+    if(!Base_Gsc_GetValidDemoId(&id,args))return;
     stackGetParamInt(1,&cp);stackGetParamVector(2,origin);stackGetParamInt(3,&any);
     sDemo_t *demo=findDemoById(id);
     if(!demo || demo->size<2){stackPushUndefined();return;}
+    int skipFails=0;
+    if(Scr_GetNumParam()>4)stackGetParamInt(4,&skipFails);
     int first=-1,last=-1;
     float nearest=256.0f*256.0f;
     if(!any)
     {
         for(int i=0;i<demo->size;++i)
         {
+            if(skipFails && !demo->pDemoFrames[i].isKeyFrame)continue;
             if(demo->pDemoFrames[i].checkpointId==cp)
             {
                 if(first<0)first=i;
@@ -1121,6 +1225,7 @@ void Gsc_Demo_FindSegment()
         for(int i=0;i<demo->size;++i)
         {
             const sDemoFrame_t &f=demo->pDemoFrames[i];
+            if(skipFails && !f.isKeyFrame)continue;
             float d=0;for(int a=0;a<3;++a){float x=f.origin[a]-origin[a];d+=x*x;}
             if(d<distance)distance=d;
             if(f.flags&8192)++grounded;else {grounded=0;airborne=true;}
@@ -1166,7 +1271,7 @@ void Gsc_Demo_ApplyPresentation(int client)
     if(v.weapon>=128){stackPushBool(false);return;}
     if(demoPresentedFrame[client]!=play.selectedFrame)
     {
-        bool cut=frame.loadNow;
+        bool cut=frame.loadNow || (demoPresentedFrame[client]>=0 && std::abs(play.selectedFrame-demoPresentedFrame[client])>4);
         int previous=demoPresentedFrame[client];
         if(previous>=0 && previous<play.pDemo->size)
         {
@@ -1202,6 +1307,16 @@ void Gsc_Demo_ApplyPresentation(int client)
     // zero velocity for frozen controls, suppressing recorded weapon bob/sway.
     ps.otherFlags |= 2;
     ps.weapFlags &= ~0x80;
+    // Viewmodel rocket tags depend on clip ammo even when animation is driven
+    // directly. Supply presentation ammo; the saved inventory is restored on exit.
+    const WeaponDef *weapon=BG_GetWeaponDef(v.weapon);
+    if(weapon)
+    {
+        if(weapon->iClipIndex>=0 && weapon->iClipIndex<int(sizeof(ps.ammoclip)/sizeof(ps.ammoclip[0])))
+            ps.ammoclip[weapon->iClipIndex]=1;
+        if(weapon->iAmmoIndex>=0 && weapon->iAmmoIndex<int(sizeof(ps.ammo)/sizeof(ps.ammo[0])))
+            ps.ammo[weapon->iAmmoIndex]=1;
+    }
     ps.weapon=v.weapon;ps.weaponTime=1000;ps.weaponDelay=0;
     ps.weapAnim=v.animation;ps.weaponstate=0;ps.bobCycle=v.bobCycle;
     ps.viewHeightCurrent=v.viewHeight;ps.viewHeightTarget=int(v.viewHeight);ps.viewHeightLerpTime=0;
@@ -1230,23 +1345,41 @@ void Gsc_Demo_SeekCheckpoint(int client)
     {stackPushUndefined();return;}
     const sDemoPlayback_t &play=opencj_playback[client];
     if(!play.pDemo){stackPushUndefined();return;}
-    int current=play.selectedFrame,target=current;
+    const auto &timeline=demoPlaybackTimeline[client];
     const sDemoFrame_t *frames=play.pDemo->pDemoFrames;
+    if(timeline.empty())
+    {
+        int current=play.selectedFrame,target=current;
+        if(direction>0)
+        {
+            while(target+1<play.pDemo->size && frames[target+1].checkpointId==frames[current].checkpointId)++target;
+            if(target+1<play.pDemo->size)++target;
+        }
+        else
+        {
+            while(target>0 && frames[target-1].checkpointId==frames[current].checkpointId)--target;
+            if(target>0){--target;while(target>0 && frames[target-1].checkpointId==frames[target].checkpointId)--target;}
+        }
+        stackPushInt(target);return;
+    }
+    int current=int(std::lower_bound(timeline.begin(),timeline.end(),play.selectedFrame)-timeline.begin());
+    current=std::min(current,int(timeline.size())-1);
+    int target=current;
     if(direction>0)
     {
-        while(target+1<play.pDemo->size && frames[target+1].checkpointId==frames[current].checkpointId)++target;
-        if(target+1<play.pDemo->size)++target;
+        while(target+1<int(timeline.size()) && frames[timeline[target+1]].checkpointId==frames[timeline[current]].checkpointId)++target;
+        if(target+1<int(timeline.size()))++target;
     }
     else
     {
-        while(target>0 && frames[target-1].checkpointId==frames[current].checkpointId)--target;
+        while(target>0 && frames[timeline[target-1]].checkpointId==frames[timeline[current]].checkpointId)--target;
         if(target>0)
         {
             --target;
-            while(target>0 && frames[target-1].checkpointId==frames[target].checkpointId)--target;
+            while(target>0 && frames[timeline[target-1]].checkpointId==frames[timeline[target]].checkpointId)--target;
         }
     }
-    stackPushInt(target);
+    stackPushInt(timeline[target]);
 }
 
 void Gsc_Demo_PlayLanding(int client)
@@ -1325,4 +1458,70 @@ void Gsc_Demo_ReadFrame_RPGSound(int client)
     }
 #endif
     stackPushUndefined();
+}
+
+// Clip handles occupy unused native IDs; database clip IDs remain independent.
+void Gsc_Demo_CreateTransient()
+{
+    static int next = 2147483647;
+    while(next>0 && findDemoById(next))--next;
+    if(next<=0){stackPushUndefined();return;}
+    int id=next--;
+    if(!createDemo(id)){stackPushUndefined();return;}
+    stackPushInt(id);
+}
+
+void Gsc_Demo_KeepLast()
+{
+    int id,count;
+    if(!Base_Gsc_GetValidDemoId(&id,2))return;
+    stackGetParamInt(1,&count);
+    sDemo_t *demo=findDemoById(id);
+    if(!demo || demo->isComplete || count<1 || count>1200){stackPushUndefined();return;}
+    int removed=std::max(0,demo->size-count);
+    if(removed)
+    {
+        memmove(demo->pDemoFrames,demo->pDemoFrames+removed,count*sizeof(sDemoFrame_t));
+        demo->size=count;demo->currentFrame=count-1;demo->lastKeyFrame=count-1;
+        // Manual clips preserve every take, so every frame stays playable.
+        for(int i=0;i<count;++i)
+        {
+            auto &f=demo->pDemoFrames[i];f.isKeyFrame=true;
+            f.prevKeyFrame=std::max(0,i-1);f.nextKeyFrame=std::min(count-1,i+1);
+        }
+    }
+    stackPushInt(removed);
+}
+
+void Gsc_Demo_ClipInfo()
+{
+    int id,index;
+    const int args=Scr_GetNumParam();
+    if(args!=2 && args!=3){stackPushUndefined();return;}
+    if(!Base_Gsc_GetValidDemoId(&id,args))return;
+    stackGetParamInt(1,&index);
+    const sDemo_t *demo=findDemoById(id);
+    if(!demo || index<0 || index>=demo->size){stackPushUndefined();return;}
+    int lastLoad=0;
+    for(int i=0;i<demo->size;++i)if(demo->pDemoFrames[i].loadNow)lastLoad=i;
+    stackMakeArray();
+    stackPushVector(demo->pDemoFrames[index].origin);stackPushArrayNext();
+    stackPushVector(demo->pDemoFrames[index].angles);stackPushArrayNext();
+    stackPushInt(lastLoad);stackPushArrayNext();
+    // Timeline colors describe only events inside the inclusive trim range.
+    int end=demo->size-1;
+    if(Scr_GetNumParam()>2)stackGetParamInt(2,&end);
+    if(end>=demo->size)end=demo->size-1;
+    int cells[40]={};
+    const int cellCount=demo->size<40 ? demo->size : 40;
+    for(int i=index;i<=end;++i)
+    {
+        const auto &frame=demo->pDemoFrames[i];
+        const int event=frame.loadNow ? 2 : (frame.saveNow ? 1 : 0);
+        int &cell=cells[i*cellCount/demo->size];
+        if(event>cell)cell=event;
+    }
+    stackMakeArray();
+    for(int event:cells){stackPushInt(event);stackPushArrayNext();}
+    stackPushArrayNext();
 }

@@ -59,6 +59,10 @@
 
 {"demoEncodeChunk", Gsc_Demo_EncodeChunk, 0},
 {"demoDecodeChunk", Gsc_Demo_DecodeChunk, 0},
+{"demoCreateTransient", Gsc_Demo_CreateTransient, 0},
+{"demoKeepLast", Gsc_Demo_KeepLast, 0},
+{"demoClipInfo", Gsc_Demo_ClipInfo, 0},
+{"demoMarkFailedSince", Gsc_Demo_MarkFailedSince, 0},
 {"demoTruncate", Gsc_Demo_Truncate, 0},
 {"demoFindSegment", Gsc_Demo_FindSegment, 0},
 

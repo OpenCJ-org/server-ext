@@ -69,6 +69,8 @@
 
 {"demoBeginPresentation", Gsc_Demo_BeginPresentation, 0},
 {"demoApplyPresentation", Gsc_Demo_ApplyPresentation, 0},
+{"demoPlaybackStyle", Gsc_Demo_PlaybackStyle, 0},
+{"demoPlaybackTime", Gsc_Demo_PlaybackTime, 0},
 {"demoSeekCheckpoint", Gsc_Demo_SeekCheckpoint, 0},
 {"demoPlayLanding", Gsc_Demo_PlayLanding, 0},
 {"demoEndPresentation", Gsc_Demo_EndPresentation, 0},
