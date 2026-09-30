@@ -19,6 +19,9 @@ void Gsc_Player_setWeaponAmmoClip(int id);
 void Gsc_Player_switchToWeaponSeamless(int id);
 void Gsc_Player_SV_GameSendServerCommand(int id);
 void Gsc_Player_GetQueuedReliableMessages(int id);
+#ifdef COD4
+void Gsc_Player_GetPingVariation(int id);
+#endif
 void Gsc_Player_ClearFPSFilter(int id);
 void Gsc_Player_setOriginAndAngles(int id);
 

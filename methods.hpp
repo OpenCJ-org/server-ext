@@ -37,6 +37,9 @@
 {"isthinking", Gsc_Utils_IsEntityThinking, 0},
 {"SV_GameSendServerCommand", Gsc_Player_SV_GameSendServerCommand, 0},
 {"getqueuedreliablemessages", Gsc_Player_GetQueuedReliableMessages, 0},
+#ifdef COD4
+{"getPingVariation", Gsc_Player_GetPingVariation, 0},
+#endif
 {"clearfpsfilter", Gsc_Player_ClearFPSFilter, 0},
 {"addplayertohidelist", Gsc_Vis_AddPlayerToHideList, 0},
 {"removeplayerfromhidelist", Gsc_Vis_RemovePlayerFromHideList, 0},
