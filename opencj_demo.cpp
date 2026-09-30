@@ -1127,11 +1127,16 @@ void Gsc_Demo_PlaybackStyle(int client)
             size_t last=first+1;
             int cp=demo->pDemoFrames[timeline[first]].checkpointId;
             while(last<timeline.size() && demo->pDemoFrames[timeline[last]].checkpointId==cp)++last;
+            // A saved setup before the last load is not part of this attempt.
+            // Keep the raw recording intact for speedrun playback.
+            size_t attempt=first;
+            for(size_t i=first;i<last;++i)
+                if(demo->pDemoFrames[timeline[i]].loadNow)attempt=i;
             // Work backwards from the final airborne chain. Short ground
             // contacts stay in the chain so bunny hops are never split apart.
             size_t takeoff=last;
             int ground=0;bool airborne=false;
-            for(size_t i=last;i>first;)
+            for(size_t i=last;i>attempt;)
             {
                 --i;
                 const auto &f=demo->pDemoFrames[timeline[i]];
@@ -1139,10 +1144,13 @@ void Gsc_Demo_PlaybackStyle(int client)
                 {airborne=true;ground=0;takeoff=i;}
                 else if(airborne && ++ground>=10)break;
             }
-            size_t approach=airborne ? (takeoff>first+20?takeoff-20:first)
-                                     : (last>first+40?last-40:first);
+            size_t approach=airborne ? (takeoff>attempt+20?takeoff-20:attempt)
+                                     : (last>attempt+40?last-40:attempt);
+            // Arrival belongs to the preceding jump, even if this checkpoint
+            // has a later load. Only trim pre-load setup at the requested start.
+            bool keepArrival=timeline[first]>begin;
             for(size_t i=first;i<last;++i)
-                if(i<first+10 || i>=approach)edited.push_back(timeline[i]);
+                if(((keepArrival || attempt==first) && i<first+10) || i>=approach)edited.push_back(timeline[i]);
             first=last;
         }
         timeline.swap(edited);
@@ -1209,7 +1217,22 @@ void Gsc_Demo_FindSegment()
                 if(first<0)first=i;
                 last=i;
             }
-            else if(first>=0){last=i;break;}
+            else if(first>=0)
+            {
+                last=i;
+                // Show the landing for up to half a second, stopping before
+                // another takeoff, load, or checkpoint transition.
+                int destination=demo->pDemoFrames[i].checkpointId;
+                int grounded=(demo->pDemoFrames[i].flags&8192)?1:0;
+                for(int j=i+1;grounded>0 && grounded<10 && j<demo->size;++j)
+                {
+                    const auto &f=demo->pDemoFrames[j];
+                    if(!f.isKeyFrame && skipFails)break;
+                    if(f.loadNow || f.checkpointId!=destination || !(f.flags&8192))break;
+                    last=j;++grounded;
+                }
+                break;
+            }
         }
         // Alternative platforms are only suitable if their setup is nearby.
         if(first>=0)
