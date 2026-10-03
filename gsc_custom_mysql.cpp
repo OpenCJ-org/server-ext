@@ -39,12 +39,34 @@ mysql_async_task *first_async_task = NULL;
 MYSQL *cod_mysql_connection = NULL;
 pthread_mutex_t lock_async_mysql;
 
+// CALL returns a trailing status result even when it selects only one rowset.
+// Buffer the first rowset for GSC, then drain the rest before reusing the connection.
+static MYSQL_RES *mysql_store_first_result(MYSQL *connection)
+{
+    MYSQL_RES *first = mysql_store_result(connection);
+    while (mysql_more_results(connection))
+    {
+        if (mysql_next_result(connection) != 0)
+        {
+            if (first) mysql_free_result(first);
+            return NULL;
+        }
+        MYSQL_RES *extra = mysql_store_result(connection);
+        if (extra) mysql_free_result(extra);
+    }
+    return first;
+}
+
 void *mysql_async_execute_query(void *input_c) //cannot be called from gsc, is threaded.
 {
     mysql_async_connection *c = (mysql_async_connection *) input_c;
     int res = mysql_query(c->connection, c->task->query);
-    if(!res && c->task->save)
-        c->task->result = mysql_store_result(c->connection);
+    if(!res)
+    {
+        MYSQL_RES *result = mysql_store_first_result(c->connection);
+        if(c->task->save) c->task->result = result;
+        else if(result) mysql_free_result(result);
+    }
     else if(res)
     {
         //mysql show error here?
@@ -454,7 +476,7 @@ void gsc_mysql_store_result()
 		return;
 	}
 
-	MYSQL_RES *result = mysql_store_result((MYSQL *)mysql);
+	MYSQL_RES *result = mysql_store_first_result((MYSQL *)mysql);
 	stackPushInt((int) result);
 }
 
