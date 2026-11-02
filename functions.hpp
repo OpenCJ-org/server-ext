@@ -1,6 +1,7 @@
 #ifndef __FUNCTIONS_HPP_
 #define __FUNCTIONS_HPP_
 
+{"opencjscandir", Gsc_Utils_ScanDir, 0},
 {"platformbrushface", Gsc_Platform_Face, 0},
 {"isvalidint", Gsc_Utils_IsValidInt, 0},
 {"isvalidfloat", Gsc_Utils_IsValidFloat, 0},

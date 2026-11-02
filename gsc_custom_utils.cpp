@@ -1,4 +1,5 @@
 #include <unistd.h>
+#include <dirent.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h> // For isalnum
@@ -10,6 +11,23 @@
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+// Read-only directory enumeration, matching libcod's scandir contract.
+void Gsc_Utils_ScanDir()
+{
+    char *path;
+    if (!stackGetParams("s", &path)) { stackPushUndefined(); return; }
+    DIR *dir = opendir(path);
+    if (!dir) { stackPushUndefined(); return; }
+    stackMakeArray();
+    while (dirent *entry = readdir(dir))
+    {
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) continue;
+        stackPushString(entry->d_name);
+        stackPushArrayNext();
+    }
+    closedir(dir);
+}
 
 void Gsc_Utils_Void(int entnum)
 {
