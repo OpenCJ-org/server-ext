@@ -1105,8 +1105,26 @@ void Gsc_Demo_MarkFailedSince()
     stackPushInt(demo->size);
 }
 
+// Idle means grounded with an unchanged position AND view. Do not remove
+// aiming, stance changes, reloads, RPG shots, or transitions across a load.
+static bool demoIdleTogether(const sDemoFrame_t &a,const sDemoFrame_t &b)
+{
+    if(!(a.flags&8192) || a.flags!=b.flags || (a.flags&511) || a.checkpointId!=b.checkpointId ||
+       a.loadNow || b.loadNow || a.saveNow || b.saveNow || a.rpgNow || b.rpgNow)return false;
+    for(int axis=0;axis<3;++axis)
+        if(fabs(a.origin[axis]-b.origin[axis])>0.01f ||
+           fabs(std::remainder(a.angles[axis]-b.angles[axis],360.0f))>0.01f)return false;
+    const auto &x=a.visual;const auto &y=b.visual;
+    if(x.valid!=y.valid)return false;
+    if(x.valid && (x.weapon!=y.weapon || x.weaponState || y.weaponState ||
+       x.weaponTime || y.weaponTime || x.weaponDelay || y.weaponDelay ||
+       x.landingEvent || y.landingEvent || fabs(x.ads-y.ads)>0.001f ||
+       fabs(x.viewHeight-y.viewHeight)>0.01f))return false;
+    return true;
+}
+
 // 0: complete speedrun/leaderboard; 1: successful low-RPG path;
-// 2: successful walkthrough with a short approach and landing at each checkpoint.
+// 2: successful walkthrough. Preserve positioning and shorten only true idle pauses.
 void Gsc_Demo_PlaybackStyle(int client)
 {
     if(Base_Gsc_IsValidClientNum(client))return;
@@ -1121,39 +1139,20 @@ void Gsc_Demo_PlaybackStyle(int client)
         if(style==0 || demo->pDemoFrames[i].isKeyFrame)timeline.push_back(i);
     if(style==2)
     {
-        std::vector<int> edited;
+        // 20 Hz capture: shorten pauses of at least a second to 0.2 seconds.
+        // Keep both ends so movement starts/ends at its original recorded pose.
+        size_t write=0;
         for(size_t first=0;first<timeline.size();)
         {
             size_t last=first+1;
-            int cp=demo->pDemoFrames[timeline[first]].checkpointId;
-            while(last<timeline.size() && demo->pDemoFrames[timeline[last]].checkpointId==cp)++last;
-            // A saved setup before the last load is not part of this attempt.
-            // Keep the raw recording intact for speedrun playback.
-            size_t attempt=first;
+            while(last<timeline.size() && timeline[last]==timeline[last-1]+1 &&
+                  timeline[last]!=begin && timeline[last-1]!=end &&
+                  demoIdleTogether(demo->pDemoFrames[timeline[first]],demo->pDemoFrames[timeline[last]]))++last;
             for(size_t i=first;i<last;++i)
-                if(demo->pDemoFrames[timeline[i]].loadNow)attempt=i;
-            // Work backwards from the final airborne chain. Short ground
-            // contacts stay in the chain so bunny hops are never split apart.
-            size_t takeoff=last;
-            int ground=0;bool airborne=false;
-            for(size_t i=last;i>attempt;)
-            {
-                --i;
-                const auto &f=demo->pDemoFrames[timeline[i]];
-                if(!(f.flags&8192))
-                {airborne=true;ground=0;takeoff=i;}
-                else if(airborne && ++ground>=10)break;
-            }
-            size_t approach=airborne ? (takeoff>attempt+20?takeoff-20:attempt)
-                                     : (last>attempt+40?last-40:attempt);
-            // Arrival belongs to the preceding jump, even if this checkpoint
-            // has a later load. Only trim pre-load setup at the requested start.
-            bool keepArrival=timeline[first]>begin;
-            for(size_t i=first;i<last;++i)
-                if(((keepArrival || attempt==first) && i<first+10) || i>=approach)edited.push_back(timeline[i]);
+                if(last-first<20 || i<first+2 || i>=last-2)timeline[write++]=timeline[i];
             first=last;
         }
-        timeline.swap(edited);
+        timeline.resize(write);
     }
     auto a=std::lower_bound(timeline.begin(),timeline.end(),begin);
     auto b=std::upper_bound(timeline.begin(),timeline.end(),end);
@@ -1234,11 +1233,22 @@ void Gsc_Demo_FindSegment()
                 break;
             }
         }
-        // Alternative platforms are only suitable if their setup is nearby.
+        // Compare the viewer with the recorded setup across this checkpoint,
+        // not just its arrival frame (large platforms can span hundreds of units).
+        // Airborne travel toward the next platform is not a matching setup.
         if(first>=0)
         {
-            float d=0;for(int a=0;a<3;++a){float x=demo->pDemoFrames[first].origin[a]-origin[a];d+=x*x;}
-            if(d>nearest)first=-1;
+            bool nearby=false, hasGround=false;
+            for(int i=first;i<=last;++i)
+                if(demo->pDemoFrames[i].checkpointId==cp && (!skipFails || demo->pDemoFrames[i].isKeyFrame) && (demo->pDemoFrames[i].flags&8192))hasGround=true;
+            for(int i=first;i<=last;++i)
+            {
+                const auto &f=demo->pDemoFrames[i];
+                if(f.checkpointId!=cp || (skipFails && !f.isKeyFrame) || (hasGround && !(f.flags&8192)))continue;
+                float d=0;for(int a=0;a<3;++a){float x=f.origin[a]-origin[a];d+=x*x;}
+                if(d<=nearest){nearby=true;break;}
+            }
+            if(!nearby)first=-1;
         }
     }
     else
