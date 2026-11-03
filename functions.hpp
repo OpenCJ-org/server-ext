@@ -3,6 +3,7 @@
 
 {"opencjscandir", Gsc_Utils_ScanDir, 0},
 {"platformbrushface", Gsc_Platform_Face, 0},
+{"platformentityinfo", Gsc_Platform_EntityInfo, 0},
 {"isvalidint", Gsc_Utils_IsValidInt, 0},
 {"isvalidfloat", Gsc_Utils_IsValidFloat, 0},
 {"containsillegalchars", Gsc_Utils_ContainsIllegalChars, 0},

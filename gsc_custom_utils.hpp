@@ -8,6 +8,7 @@ extern "C" {
 #endif // __cplusplus
 
 void Gsc_Platform_Face();
+void Gsc_Platform_EntityInfo();
 void Gsc_Utils_ScanDir();
 void Gsc_Utils_Void(int);
 void Gsc_Utils_ZeroInt(int);

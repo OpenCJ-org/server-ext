@@ -663,3 +663,21 @@ extern "C" void Gsc_Platform_Face()
     stackPushUndefined(); // CoD2 continues to use the GSC detector.
 #endif
 }
+
+// Read once when binding an editor checkpoint. Gameplay uses getGroundEntity().
+extern "C" void Gsc_Platform_EntityInfo()
+{
+#ifdef COD4
+    int number;
+    if(!stackGetParams("i", &number) || number < 0 || number >= ENTITYNUM_WORLD || !g_entities[number].r.inuse) {
+        stackPushUndefined(); return;
+    }
+    const gentity_t& ent = g_entities[number];
+    stackMakeArray();
+    stackPushInt(ent.r.bmodel ? ent.s.index : 0); stackPushArrayNext();
+    stackPushVector(ent.r.mins); stackPushArrayNext();
+    stackPushVector(ent.r.maxs); stackPushArrayNext();
+#else
+    stackPushUndefined();
+#endif
+}
