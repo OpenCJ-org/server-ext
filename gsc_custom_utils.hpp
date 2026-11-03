@@ -15,6 +15,7 @@ void Gsc_Utils_ZeroInt(int);
 void Gsc_Utils_VoidFunc();
 void Gsc_Utils_IsValidInt();
 void Gsc_Utils_IsValidFloat();
+void Gsc_Utils_FloatToPreciseString();
 void Gsc_Utils_ContainsIllegalChars();
 void Gsc_Utils_Printf();
 void Gsc_Utils_VectorScale();

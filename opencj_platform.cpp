@@ -60,6 +60,13 @@ double area(const Point* pts,int n,const Point& normal) {
     for(int i=1;i<n-1;i++)sum+=dot(cross(add(pts[i],pts[0],-1),add(pts[i+1],pts[0],-1)),normal);
     return std::abs(sum)*0.5;
 }
+// Use the whole polygon: a tiny first bevel is a poor basis after float rounding.
+Point polygonNormal(const Point* points,int count) {
+    Point sum={};
+    for(int i=1;i<count-1;i++)sum=add(sum,cross(add(points[i],points[0],-1),add(points[i+1],points[0],-1)),1);
+    const double length=std::sqrt(dot(sum,sum));
+    return length>1e-12?add(Point{},sum,1/length):Point{};
+}
 Plane edgePlane(const Point& a,const Point& b,const Point& normal) {
     Point n=cross(add(b,a,-1),normal);n=add(Point{},n,1/std::sqrt(dot(n,n)));
     return {n,dot(n,a)};
@@ -115,7 +122,8 @@ struct SupportedRegion {
             if(a>largest+0.001){largest=a;obstruction=&gap;}
         }
         if(!obstruction) {
-            region.count=simplify(region.points,region.count,1.0);
+            // Small supported ledges are valid; discard only numerical duplicates.
+            region.count=simplify(region.points,region.count);
             if(region.count>=3 && region.count<=8){best=region;bestArea=area(region.points,region.count,normal);}
             return;
         }
@@ -277,7 +285,7 @@ bool collisionTriangles(const vec3_t mins,const vec3_t maxs,std::vector<Obstacle
 // Work from player-solid brush intersections, never sampled rays. Freestanding objects
 // remain ignored; solids connected to the landing boundary are walls.
 bool collectWalls(const Point* points,int count,std::vector<Obstacle>& obstacles) {
-    Point normal=cross(add(points[1],points[0],-1),add(points[2],points[0],-1));
+    Point normal=polygonNormal(points,count);
     normal=add(Point{},normal,1/std::sqrt(dot(normal,normal)));
     vec3_t mins,maxs;
     for(int axis=0;axis<3;axis++) {
@@ -391,7 +399,7 @@ bool connectedSurface(const Obstacle& source,const Obstacle& candidate,const Poi
     return contact.count>=3 && area(contact.points,contact.count,normal)>0.0001;
 }
 bool collectLanding(const Point* points,int count,const Point& origin,std::vector<Obstacle>& surfaces) {
-    const Point normal=cross(add(points[1],points[0],-1),add(points[2],points[0],-1));
+    const Point normal=polygonNormal(points,count);
     const Point unit=add(Point{},normal,1/std::sqrt(dot(normal,normal)));
     const double height=dot(points[0],unit);
     surfaces.resize(1);surfaces[0].count=count;std::copy(points,points+count,surfaces[0].points);
@@ -456,13 +464,13 @@ bool collectLanding(const Point* points,int count,const Point& origin,std::vecto
 // Same circular edge contact and slope-height allowance as checkpointArea::touchesPlayer.
 // The bounding box used to collect candidates is only a broad-phase query.
 bool playerContact(const Point* points,int count,const Point& origin,Point& seed,double& distance) {
-    Point normal=cross(add(points[1],points[0],-1),add(points[2],points[0],-1));
+    Point normal=polygonNormal(points,count);
     normal=add(Point{},normal,1/std::sqrt(dot(normal,normal)));
     if(normal.x[2]<0.7)return false;
     bool inside=true;
     for(int i=0;i<count;i++) {
         const Point edge=add(points[(i+1)%count],points[i],-1),delta=add(origin,points[i],-1);
-        if(edge.x[0]*delta.x[1]-edge.x[1]*delta.x[0]<-0.01)inside=false;
+        if(edge.x[0]*delta.x[1]-edge.x[1]*delta.x[0]<-0.0001*std::hypot(edge.x[0],edge.x[1]))inside=false;
     }
     Point candidate=origin;candidate.x[2]=(dot(points[0],normal)-normal.x[0]*origin.x[0]-normal.x[1]*origin.x[1])/normal.x[2];
     double nearest=0;
@@ -508,7 +516,7 @@ bool classifyWalls(std::vector<Obstacle>& obstacles,const std::vector<Obstacle>&
 }
 
 bool finalizeLanding(Obstacle& hull,const std::vector<Obstacle>& surfaces,std::vector<Obstacle> obstacles,const Point& origin,const Point& seed) {
-    Point normal=cross(add(hull.points[1],hull.points[0],-1),add(hull.points[2],hull.points[0],-1));normal=add(Point{},normal,1/std::sqrt(dot(normal,normal)));
+    Point normal=polygonNormal(hull.points,hull.count);normal=add(Point{},normal,1/std::sqrt(dot(normal,normal)));
     if(!classifyWalls(obstacles,surfaces,normal))return false;
     std::vector<Obstacle> constraints;
     if(!coveredHull(hull,surfaces,normal,&constraints) && constraints.empty())return false;
@@ -524,10 +532,10 @@ bool finalizeLanding(Obstacle& hull,const std::vector<Obstacle>& surfaces,std::v
     if(hull.count>8 || !coveredHull(hull,surfaces,normal))return false;
     for(int i=0;i<hull.count;i++) {
         const Point a=hull.points[i],b=hull.points[(i+1)%hull.count];const Point edge=add(b,a,-1);
-        if(dot(edge,edge)<1 || std::abs(dot(add(a,hull.points[0],-1),normal))>0.25)return false;
+        if(dot(edge,edge)<0.0001 || std::abs(dot(add(a,hull.points[0],-1),normal))>0.25)return false;
         for(int j=0;j<hull.count;j++)if(j!=i && j!=(i+1)%hull.count) {
             const Point d=add(hull.points[j],a,-1);
-            if(edge.x[0]*d.x[1]-edge.x[1]*d.x[0]<0.01)return false;
+            if(edge.x[0]*d.x[1]-edge.x[1]*d.x[0]<=0.0001*std::hypot(edge.x[0],edge.x[1]))return false;
         }
     }
     for(const auto& wall:obstacles)if(wall.wall) {
@@ -542,7 +550,7 @@ bool finalizeLanding(Obstacle& hull,const std::vector<Obstacle>& surfaces,std::v
 bool detectLanding(Point* points,int& count,const Point& origin) {
     std::vector<Obstacle> surfaces;if(!collectLanding(points,count,origin,surfaces))return false;
     Obstacle hull={};if(!convexHull(surfaces,hull))return false;
-    const Point n=cross(add(hull.points[1],hull.points[0],-1),add(hull.points[2],hull.points[0],-1));const Point normal=add(Point{},n,1/std::sqrt(dot(n,n)));
+    const Point n=polygonNormal(hull.points,hull.count);const Point normal=add(Point{},n,1/std::sqrt(dot(n,n)));
     Point seed;double distance;if(!playerContact(points,count,origin,seed,distance))return false;
     std::vector<Obstacle> walls;if(!collectWalls(hull.points,hull.count,walls))return false;
     // Inset only the outside hull for BSP seam/float precision; holes stay holes.

@@ -116,6 +116,16 @@ void Gsc_Utils_IsValidInt()
     stackPushBool(true);
 }
 
+// Nine significant digits round-trip every finite IEEE-754 float used by GSC.
+void Gsc_Utils_FloatToPreciseString()
+{
+    float value;
+    if (!stackGetParams("f", &value)) { stackPushUndefined(); return; }
+    char text[32];
+    snprintf(text, sizeof(text), "%.9g", double(value));
+    stackPushString(text);
+}
+
 void Gsc_Utils_IsValidFloat()
 {
     char *buf = NULL;
