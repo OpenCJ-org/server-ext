@@ -55,6 +55,24 @@ int simplify(Point* pts,int n,double minEdgeSquared=0.0001) {
     }
     return n;
 }
+// Start with the brush bounds projected onto the face plane, so the temporary
+// polygon always encloses the complete face regardless of player position.
+int brushFace(const cbrush_t& brush,unsigned face,const Point& center,const Point& normal,Point* points) {
+    Point u={{normal.x[2],0,-normal.x[0]}};u=add(Point{},u,1/std::sqrt(dot(u,u)));
+    const Point v=cross(normal,u);
+    double loU=1e30,hiU=-1e30,loV=1e30,hiV=-1e30;
+    for(int corner=0;corner<8;corner++) {
+        Point p;for(int axis=0;axis<3;axis++)p.x[axis]=(corner&(1<<axis))?brush.maxs[axis]:brush.mins[axis];
+        p=add(p,center,-1);const double du=dot(p,u),dv=dot(p,v);
+        loU=std::min(loU,du);hiU=std::max(hiU,du);loV=std::min(loV,dv);hiV=std::max(hiV,dv);
+    }
+    points[0]=add(add(center,u,loU-1),v,loV-1);points[1]=add(add(center,u,hiU+1),v,loV-1);
+    points[2]=add(add(center,u,hiU+1),v,hiV+1);points[3]=add(add(center,u,loU-1),v,hiV+1);
+    int count=4;
+    for(unsigned i=0;i<brush.numsides+6 && count>=3;i++)if(i!=face)count=clip(points,count,plane(brush,i));
+    return simplify(points,count);
+}
+
 double area(const Point* pts,int n,const Point& normal) {
     double sum=0;
     for(int i=1;i<n-1;i++)sum+=dot(cross(add(pts[i],pts[0],-1),add(pts[i+1],pts[0],-1)),normal);
@@ -398,11 +416,13 @@ bool connectedSurface(const Obstacle& source,const Obstacle& candidate,const Poi
     }
     return contact.count>=3 && area(contact.points,contact.count,normal)>0.0001;
 }
-bool collectLanding(const Point* points,int count,const Point& origin,std::vector<Obstacle>& surfaces) {
+bool collectLanding(const Point* points,int count,std::vector<Obstacle>& surfaces) {
     const Point normal=polygonNormal(points,count);
     const Point unit=add(Point{},normal,1/std::sqrt(dot(normal,normal)));
     const double height=dot(points[0],unit);
     surfaces.resize(1);surfaces[0].count=count;std::copy(points,points+count,surfaces[0].points);
+    // Bound work by face count and clipping complexity, not world-space size.
+    // A long, simple floor is cheaper than a small, highly fragmented one.
     std::vector<unsigned> visited;
     for(size_t current=0;current<surfaces.size();current++) {
         const Obstacle source=surfaces[current];vec3_t mins,maxs;
@@ -423,21 +443,14 @@ bool collectLanding(const Point* points,int count,const Point& origin,std::vecto
             for(unsigned face=0;face<b.numsides+6;face++) {
                 const Plane top=plane(b,face);
                 if(dot(top.n,unit)<0.99999 || std::abs(top.d-height)>0.01)continue;
-                Point u={{unit.x[2],0,-unit.x[0]}};u=add(Point{},u,1/std::sqrt(dot(u,u)));const Point v=cross(unit,u);
-                Obstacle candidate={};candidate.count=4;
-                candidate.points[0]=add(add(points[0],u,-8192),v,-8192);candidate.points[1]=add(add(points[0],u,8192),v,-8192);
-                candidate.points[2]=add(add(points[0],u,8192),v,8192);candidate.points[3]=add(add(points[0],u,-8192),v,8192);
-                for(unsigned j=0;j<b.numsides+6 && candidate.count>=3;j++)if(j!=face)candidate.count=clip(candidate.points,candidate.count,plane(b,j));
-                candidate.count=simplify(candidate.points,candidate.count);
+                Obstacle candidate={};candidate.count=brushFace(b,face,points[0],unit,candidate.points);
                 if(candidate.count<3)continue;
-                bool bounded=true;for(int j=0;j<candidate.count;j++){Point d=add(candidate.points[j],origin,-1);if(dot(d,d)>4096.0*4096.0)bounded=false;}
                 Obstacle contact=candidate;
                 for(int j=0;j<source.count && contact.count>=3;j++) {
                     Plane edge=edgePlane(source.points[j],source.points[(j+1)%source.count],unit);edge.d+=surfaceSeamTolerance;
                     contact.count=clip(contact.points,contact.count,edge);
                 }
                 if(contact.count<3 || area(contact.points,contact.count,unit)<0.0001)continue;
-                if(!bounded)return false;
                 visited.push_back(index);surfaces.push_back(candidate);
                 if(surfaces.size()>4096)return false; // Bound editor work; never silently return a partial component.
                 break;
@@ -447,8 +460,6 @@ bool collectLanding(const Point* points,int count,const Point& origin,std::vecto
         if(!collisionTriangles(mins,maxs,triangles))return false;
         for(auto candidate:triangles) {
             if(!triangleFace(candidate,unit,height) || !connectedSurface(source,candidate,unit))continue;
-            bool bounded=true;for(int j=0;j<candidate.count;j++){Point d=add(candidate.points[j],origin,-1);if(dot(d,d)>4096.0*4096.0)bounded=false;}
-            if(!bounded)return false;
             bool duplicate=false;
             for(auto existing:surfaces){canonicalize(existing);if(!polygonLess(candidate,existing) && !polygonLess(existing,candidate)){duplicate=true;break;}}
             if(duplicate)continue;
@@ -548,7 +559,7 @@ bool finalizeLanding(Obstacle& hull,const std::vector<Obstacle>& surfaces,std::v
 }
 
 bool detectLanding(Point* points,int& count,const Point& origin) {
-    std::vector<Obstacle> surfaces;if(!collectLanding(points,count,origin,surfaces))return false;
+    std::vector<Obstacle> surfaces;if(!collectLanding(points,count,surfaces))return false;
     Obstacle hull={};if(!convexHull(surfaces,hull))return false;
     const Point n=polygonNormal(hull.points,hull.count);const Point normal=add(Point{},n,1/std::sqrt(dot(n,n)));
     Point seed;double distance;if(!playerContact(points,count,origin,seed,distance))return false;
@@ -580,20 +591,12 @@ struct Search {
             if(footprint) { if(top.n.x[2]<0.7)continue; }
             else if(dot(top.n,normal)<0.99999 || std::abs(dot(origin,top.n)-top.d)>0.5)continue;
             Point center=add(origin,top.n,(top.d-dot(origin,top.n))/dot(top.n,top.n));
-            Point u={{top.n.x[2],0,-top.n.x[0]}};u=add(Point{},u,1/std::sqrt(dot(u,u)));
-            Point v=cross(top.n,u);v=add(Point{},v,1/std::sqrt(dot(v,v)));
-            Point pts[64]={add(add(center,u,-8192),v,-8192),add(add(center,u,8192),v,-8192),add(add(center,u,8192),v,8192),add(add(center,u,-8192),v,8192)};
-            int n=4;
-            for(unsigned i=0;i<b.numsides+6 && n>=3;i++)if(i!=face)n=clip(pts,n,plane(b,i));
-            // Preserve constituent faces until assembly; editor spacing applies only
-            // to the final result, never to internal brush subdivisions.
-            n=simplify(pts,n);
+            Point pts[64];int n=brushFace(b,face,center,top.n,pts);
             if(n<3)continue;
-            double area=0;bool bounded=true;
+            double area=0;
             for(int i=0;i<n;i++) {
                 const Point a=add(pts[i],center,-1),z=add(pts[(i+1)%n],center,-1);
                 area+=dot(cross(a,z),top.n);
-                if(dot(a,a)>4096.0*4096.0)bounded=false;
             }
             area=std::abs(area);
             double supportDistance=0;
@@ -601,7 +604,7 @@ struct Search {
                 Point contact;
                 if(!playerContact(pts,n,origin,contact,supportDistance))continue;
             }
-            if(bounded && area>0 && (footprint ? supportDistance<bestDistance : area>bestArea)) {
+            if(area>0 && (footprint ? supportDistance<bestDistance : area>bestArea)) {
                 bestArea=area;bestDistance=supportDistance;count=n;std::copy(pts,pts+n,best);
             }
         }
