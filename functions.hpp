@@ -2,6 +2,9 @@
 #define __FUNCTIONS_HPP_
 
 {"opencjscandir", Gsc_Utils_ScanDir, 0},
+#ifdef COD4
+{"opencjmapexists", Gsc_Utils_MapExists, 0},
+#endif
 {"platformbrushface", Gsc_Platform_Face, 0},
 {"platformentityinfo", Gsc_Platform_EntityInfo, 0},
 {"isvalidint", Gsc_Utils_IsValidInt, 0},

@@ -29,6 +29,34 @@ void Gsc_Utils_ScanDir()
     closedir(dir);
 }
 
+#ifdef COD4
+// Match SV_Map's fastfile lookup, including custom maps that are not loaded.
+// The stock GSC mapExists() only searches the currently mounted BSP paths.
+extern qboolean DB_FileExists(const char *filename, int ffdir);
+void Gsc_Utils_MapExists()
+{
+    char *input;
+    if (!stackGetParams("s", &input)) { stackPushBool(false); return; }
+    const size_t length = strlen(input);
+    if (!length || length >= MAX_QPATH) { stackPushBool(false); return; }
+    char name[MAX_QPATH];
+    for (size_t i = 0; i < length; ++i)
+    {
+        unsigned char c = (unsigned char)input[i];
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '_' || c == '-'))
+        { stackPushBool(false); return; }
+        name[i] = tolower(c);
+    }
+    name[length] = '\0';
+    // Load screens and shared zone assets are not selectable multiplayer maps.
+    if (length >= 5 && !strcmp(name + length - 5, "_load"))
+    { stackPushBool(false); return; }
+    stackPushBool(DB_FileExists(name, 2) ||
+                  (!strncmp(name, "mp_", 3) && DB_FileExists(name, 0)));
+}
+#endif
+
 void Gsc_Utils_Void(int entnum)
 {
     (void)entnum; // Unused
